@@ -19,7 +19,12 @@ import {
 } from "@/lib/mock-data";
 import { buildRoutePath, normalizeRoutePath } from "@/lib/content/utils";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { isSupabaseConfigured, supabaseEnv } from "@/lib/supabase/config";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import {
+  getDocumentStorageBucketName,
+  removeDocumentObjects,
+  uploadDocumentObject,
+} from "@/lib/storage/document-storage";
 import type { Database } from "@/types/database";
 
 import type {
@@ -788,28 +793,20 @@ export async function importAdminHtmlDocument(input: {
     const htmlBuffer = Buffer.from(await input.htmlFile.arrayBuffer());
     const htmlChecksum = createHash("sha256").update(htmlBuffer).digest("hex");
     const entryMimeType = getImportedDocumentMimeType(input.htmlFile);
-    const { error: htmlUploadError } = await client.storage
-      .from(supabaseEnv.storageBucket)
-      .upload(htmlStoragePath, htmlBuffer, {
-        upsert: true,
-        contentType: getImportedDocumentUploadContentType(input.htmlFile),
-      });
-
-    if (htmlUploadError) {
-      throw htmlUploadError;
-    }
-
-    const entryPublicUrl = client.storage
-      .from(supabaseEnv.storageBucket)
-      .getPublicUrl(htmlStoragePath).data.publicUrl;
+    const uploadedEntry = await uploadDocumentObject(client, {
+      key: htmlStoragePath,
+      body: htmlBuffer,
+      contentType: getImportedDocumentUploadContentType(input.htmlFile),
+    });
+    const storageBucket = getDocumentStorageBucketName();
     const assetRows: AppSchema["document_assets"]["Insert"][] = [
       {
         document_id: documentId,
         file_name: input.htmlFile.name,
         mime_type: entryMimeType,
-        storage_bucket: supabaseEnv.storageBucket,
-        storage_path: htmlStoragePath,
-        public_url: entryPublicUrl,
+        storage_bucket: uploadedEntry.bucket,
+        storage_path: uploadedEntry.key,
+        public_url: uploadedEntry.publicUrl,
         checksum: htmlChecksum,
         size_bytes: htmlBuffer.byteLength,
         is_entry: true,
@@ -818,7 +815,7 @@ export async function importAdminHtmlDocument(input: {
         document_id: documentId,
         file_name: asset.fileName,
         mime_type: asset.mimeType,
-        storage_bucket: supabaseEnv.storageBucket,
+        storage_bucket: storageBucket,
         storage_path: asset.storagePath,
         public_url: asset.publicUrl,
         checksum: asset.checksum,
@@ -2755,35 +2752,24 @@ async function uploadAssetFiles(
       const buffer = Buffer.from(await asset.file.arrayBuffer());
       const checksum = createHash("sha256").update(buffer).digest("hex");
       const mimeType = normalizeUploadContentType(asset.file.type, "application/octet-stream");
-      const { error } = await client.storage
-        .from(supabaseEnv.storageBucket)
-        .upload(storagePath, buffer, {
-          upsert: true,
-          contentType: mimeType,
-        });
-
-      if (error) {
-        throw error;
-      }
-
-      const publicUrl = client.storage
-        .from(supabaseEnv.storageBucket)
-        .getPublicUrl(storagePath).data.publicUrl;
+      const uploadedAsset = await uploadDocumentObject(client, {
+        key: storagePath,
+        body: buffer,
+        contentType: mimeType,
+      });
       uploads.push({
         relativePath,
         fileName: asset.file.name,
         mimeType,
-        publicUrl,
-        storagePath,
+        publicUrl: uploadedAsset.publicUrl,
+        storagePath: uploadedAsset.key,
         checksum,
         sizeBytes: asset.file.size,
       });
     }
   } catch (error) {
     if (uploads.length > 0) {
-      await client.storage.from(supabaseEnv.storageBucket).remove(
-        uploads.map((asset) => asset.storagePath),
-      );
+      await removeDocumentObjects(client, uploads.map((asset) => asset.storagePath));
     }
 
     throw error;
@@ -2798,7 +2784,7 @@ async function cleanupImportedArtifacts(
   documentId: string | null,
 ) {
   if (storagePaths.length > 0) {
-    await client.storage.from(supabaseEnv.storageBucket).remove(storagePaths);
+    await removeDocumentObjects(client, storagePaths);
   }
 
   if (!documentId) {

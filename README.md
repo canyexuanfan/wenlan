@@ -31,10 +31,18 @@ The app reads these values from environment variables:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_STORAGE_BUCKET`
 - `SUPABASE_THUMBNAIL_BUCKET`
+- `DOCUMENT_STORAGE_DRIVER`
+- `COS_BUCKET`
+- `COS_REGION`
+- `COS_SECRET_ID`
+- `COS_SECRET_KEY`
+- `COS_PUBLIC_BASE_URL`
 - `ADMIN_USERNAME`
 - `ADMIN_EMAIL`
 
 `ADMIN_USERNAME` and `ADMIN_EMAIL` are optional. They enable one administrator to log in with a short username while keeping the real account details out of source code.
+
+Set `DOCUMENT_STORAGE_DRIVER=cos` to store imported document files and assets in Tencent Cloud COS. `COS_PUBLIC_BASE_URL` is optional; leave it empty to use the default COS public domain, or set it to a CDN/custom domain.
 
 ## Safety Before Publishing
 
