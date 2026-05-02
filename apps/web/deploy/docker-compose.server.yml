@@ -1,0 +1,15 @@
+services:
+  wenlan-web:
+    container_name: wenlan-web
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "${WENLAN_HOST_PORT:-13010}:3000"
+    restart: unless-stopped

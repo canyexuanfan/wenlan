@@ -1,0 +1,40 @@
+# Node / Next
+node_modules/
+.next/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env*.example
+
+# Wenlan web local env
+apps/web/.env.local
+apps/web/.env.production.local
+apps/web/.env.development.local
+
+# Self-hosted Supabase runtime secrets
+infra/supabase/runtime/*
+!infra/supabase/runtime/.gitkeep
+
+# Build artifacts
+dist/
+coverage/
+*.tar
+*.tar.gz
+*.zip
+
+# Runtime logs and process files
+*.log
+*.err.log
+*.out.log
+*.pid
+apps/web/.next-logs/
+apps/web/.run-logs/
+
+# Local secret inventories / handoff notes
+**/SECRET-INVENTORY.md
+**/SECRET-BACKUP.md
+
+# Local archives and deployment bundles
+wenlan-web-deploy*.tar.gz

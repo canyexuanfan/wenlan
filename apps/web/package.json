@@ -1,0 +1,42 @@
+{
+  "name": "@wenlan/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "文览 Web 应用：把各种文档做成可阅读的在线展台。",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "dev:local": "node ./scripts/run-local-stack.mjs dev",
+    "dev:mock": "node ./scripts/run-next-mock.mjs dev",
+    "build": "next build",
+    "build:local": "node ./scripts/run-next-local-supabase.mjs build",
+    "build:mock": "node ./scripts/run-next-mock.mjs build",
+    "start": "next start",
+    "start:local": "node ./scripts/run-local-stack.mjs start",
+    "supabase:local": "node ./scripts/run-local-stack.mjs supabase",
+    "start:mock": "node ./scripts/run-next-mock.mjs start",
+    "lint": "eslint && node ./scripts/check-text-encoding.mjs",
+    "lint:text": "node ./scripts/check-text-encoding.mjs",
+    "test:roles": "node ./scripts/check-two-role-model.mjs"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.103.2",
+    "cheerio": "^1.2.0",
+    "markdown-it": "^14.1.1",
+    "next": "16.2.3",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.3",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
