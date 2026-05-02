@@ -16,6 +16,8 @@
     "start:mock": "node ./scripts/run-next-mock.mjs start",
     "lint": "eslint && node ./scripts/check-text-encoding.mjs",
     "lint:text": "node ./scripts/check-text-encoding.mjs",
+    "storage:migrate-cos": "node ./scripts/migrate-document-assets-to-cos.mjs",
+    "storage:migrate-cos:execute": "node ./scripts/migrate-document-assets-to-cos.mjs --execute",
     "test:roles": "node ./scripts/check-two-role-model.mjs"
   },
   "dependencies": {
