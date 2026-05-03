@@ -7,7 +7,7 @@
     "dev": "next dev --webpack",
     "dev:local": "node ./scripts/run-local-stack.mjs dev",
     "dev:mock": "node ./scripts/run-next-mock.mjs dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "build:local": "node ./scripts/run-next-local-supabase.mjs build",
     "build:mock": "node ./scripts/run-next-mock.mjs build",
     "start": "next start",
