@@ -30,6 +30,8 @@ export async function HomePageView({
   const hasActiveSearch = Boolean(filters.query || filters.tag);
   const resultCount = searchFolders.length + searchDocuments.length;
   const homeDocuments = topLevelFolders.length > 0 ? [] : latestDocuments;
+  const latestHomeDocuments =
+    !hasActiveSearch && topLevelFolders.length > 0 ? latestDocuments.slice(0, 3) : [];
   const hasHomeContent =
     topLevelFolders.length > 0 || homeDocuments.length > 0 || featuredDocuments.length > 0;
   const defaultBrowseHref = topLevelFolders[0]
@@ -328,6 +330,42 @@ export async function HomePageView({
         </section>
       )}
       </section>
+
+      {latestHomeDocuments.length > 0 ? (
+        <section className="home-library-panel" aria-labelledby="home-latest-title">
+          <div className="section-toolbar">
+            <div>
+              <p className="section-eyebrow">最新</p>
+              <h2 id="home-latest-title" className="section-title">
+                最新公开文档
+              </h2>
+            </div>
+          </div>
+
+          <section className="gallery-grid">
+            {latestHomeDocuments.map((document) => (
+              <Link
+                key={document.id}
+                href={toHref(document.routePath)}
+                prefetch
+                className="paper-card document-card"
+              >
+                <div className="card-topline">
+                  <p className="card-eyebrow">文档</p>
+                  <AccessBadge mode={document.accessMode} />
+                </div>
+                <h3>{document.title}</h3>
+                <p>{document.summary}</p>
+                <TagList tags={document.tags} />
+                <div className="card-meta">
+                  <span>{document.authorName}</span>
+                  <span>{formatDate(document.updatedAt)}</span>
+                </div>
+              </Link>
+            ))}
+          </section>
+        </section>
+      ) : null}
     </SiteFrame>
   );
 }

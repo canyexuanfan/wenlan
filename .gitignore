@@ -32,6 +32,7 @@ coverage/
 apps/web/.next-logs/
 apps/web/.run-logs/
 apps/web/.migration-backups/
+.claude/
 
 # Local secret inventories / handoff notes
 **/SECRET-INVENTORY.md

@@ -11,7 +11,7 @@ export function createSupabaseAdminClient() {
   assertServiceRoleConfigured();
 
   return createClient<Database>(
-    supabaseEnv.url,
+    supabaseEnv.serverUrl,
     supabaseEnv.serviceRoleKey,
     {
       auth: {

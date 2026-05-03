@@ -6,6 +6,7 @@ import { getAuthViewer, viewerCanManageAdmin } from "@/lib/auth/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isMockModeForced, isSupabaseConfigured } from "@/lib/supabase/config";
+import { downloadDocumentObject } from "@/lib/storage/document-storage";
 import type { Database } from "@/types/database";
 
 import { getMockHomePageData, getMockPublicRouteData } from "./mock-repository";
@@ -50,6 +51,10 @@ type DocumentListRow = Omit<DocumentRow, "body_html" | "rendered_body_html"> & {
   body_html?: string | null;
   rendered_body_html?: string | null;
 };
+type DocumentAssetRow = Pick<
+  AppSchema["document_assets"]["Row"],
+  "file_name" | "mime_type" | "storage_bucket" | "storage_path"
+>;
 type DocumentOutlineRow = AppSchema["document_outlines"]["Row"];
 type EffectiveContentAccessMode = Exclude<Database["app"]["Enums"]["access_mode"], "inherit">;
 type ResolvedContentAccess = {
@@ -894,6 +899,81 @@ const getDocumentOutline = cache(async function getDocumentOutline(documentId: s
   return mapOutlineRows(data);
 });
 
+const getDocumentEntryAsset = cache(async function getDocumentEntryAsset(documentId: string) {
+  const adminClient = createSupabaseAdminClient();
+  const { data, error } = await adminClient
+    .schema("app")
+    .from("document_assets")
+    .select("file_name, mime_type, storage_bucket, storage_path")
+    .eq("document_id", documentId)
+    .eq("is_entry", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+});
+
+function isHtmlEntryAsset(asset: DocumentAssetRow | null): asset is DocumentAssetRow {
+  if (!asset) {
+    return false;
+  }
+
+  return (
+    asset.mime_type?.toLowerCase().includes("html") ||
+    /\.(html?|xhtml)$/i.test(asset.file_name)
+  );
+}
+
+function hasSourceFormattingMarkers(html: string) {
+  return /<style[\s>]/i.test(html) || /<link\b[^>]*rel=["']?stylesheet/i.test(html);
+}
+
+async function restoreSourceDocumentBodyFromEntryAsset(
+  document: DocumentRow,
+): Promise<DocumentRow> {
+  if (document.render_mode !== "source" || document.source_type !== "html") {
+    return document;
+  }
+
+  const entryAsset = await getDocumentEntryAsset(document.id);
+
+  if (!isHtmlEntryAsset(entryAsset)) {
+    return document;
+  }
+
+  const htmlEntryAsset = entryAsset;
+
+  try {
+    const adminClient = createSupabaseAdminClient();
+    const sourceHtml = (
+      await downloadDocumentObject(adminClient, {
+        bucket: htmlEntryAsset.storage_bucket,
+        key: htmlEntryAsset.storage_path,
+      })
+    ).toString("utf8");
+
+    if (
+      sourceHtml.trim() &&
+      hasSourceFormattingMarkers(sourceHtml) &&
+      !hasSourceFormattingMarkers(document.body_html)
+    ) {
+      return {
+        ...document,
+        body_html: sourceHtml,
+      };
+    }
+  } catch (error) {
+    console.warn("[content] source document entry restore failed", error);
+  }
+
+  return document;
+}
+
 async function getDocumentByRoutePath(
   _client: AppClient,
   viewer: ContentViewer,
@@ -919,6 +999,10 @@ async function getDocumentByRoutePath(
 
   if (!(await canViewerAccessDocument(viewer, data))) {
     return null;
+  }
+
+  if (data.render_mode === "source") {
+    return restoreSourceDocumentBodyFromEntryAsset(data);
   }
 
   if (data.render_mode !== "source" && !data.rendered_body_html.trim()) {

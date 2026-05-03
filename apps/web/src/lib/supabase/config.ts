@@ -1,5 +1,9 @@
 export const supabaseEnv = {
   url: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+  serverUrl:
+    process.env.SUPABASE_SERVER_URL ??
+    process.env.NEXT_PUBLIC_SUPABASE_URL ??
+    "",
   anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   storageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? "document-assets",
@@ -12,6 +16,10 @@ export const supabaseEnv = {
 
 export function hasSupabaseCredentials() {
   return Boolean(supabaseEnv.url && supabaseEnv.anonKey);
+}
+
+export function hasSupabaseServerCredentials() {
+  return Boolean(supabaseEnv.serverUrl && supabaseEnv.anonKey);
 }
 
 export function isMockModeForced() {

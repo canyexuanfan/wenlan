@@ -40,8 +40,11 @@ function shouldRefreshAuth(request: NextRequest) {
 }
 
 export async function proxy(request: NextRequest) {
+  const supabaseUrl =
+    process.env.SUPABASE_SERVER_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+
   if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !supabaseUrl ||
     !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_FORCE_MOCK === "true" ||
     process.env.WENLAN_FORCE_MOCK === "true"
@@ -61,7 +64,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const supabase = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    supabaseUrl,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
