@@ -3,8 +3,8 @@ param(
   [string]$ServerUser = "root",
   [string]$SshKeyPath = "C:\Users\wzm33\.ssh\temp-bqgf-deploy-key",
   [int]$HostPort = 13010,
-  [string]$RemoteRoot = "/opt/docker/wenlan-web",
-  [string]$AppUrl = "http://nexusapi.hnwen17.top",
+  [string]$RemoteRoot = "/www/wwwroot/wenlan.hnwen17.top",
+  [string]$AppUrl = "http://wenlan.hnwen17.top",
   [string]$SupabasePublicUrl = "http://121.4.65.95:18000",
   [ValidateSet("pm2", "docker")]
   [string]$Runtime = "pm2"
@@ -93,30 +93,37 @@ runtime="$1"
 remote_root="$2"
 remote_archive="/root/wenlan-web-deploy.tar.gz"
 remote_env="/root/wenlan-web.env"
+state_root="/opt/docker/wenlan-web"
+runtime_env="$state_root/wenlan-web.env"
 
-mkdir -p "$remote_root/app"
-mv "$remote_archive" "$remote_root/wenlan-web-deploy.tar.gz"
-mv "$remote_env" "$remote_root/wenlan-web.env"
-sed -i 's/\r$//' "$remote_root/wenlan-web.env"
-rm -rf "$remote_root/app"/*
-tar -xzf "$remote_root/wenlan-web-deploy.tar.gz" -C "$remote_root/app"
-cp "$remote_root/wenlan-web.env" "$remote_root/app/deploy/.env"
-cp "$remote_root/wenlan-web.env" "$remote_root/app/deploy/.env.backup-$(date +%Y%m%d-%H%M%S)"
-cd "$remote_root/app/deploy"
+mkdir -p "$remote_root" "$state_root"
+mv "$remote_archive" "$state_root/wenlan-web-deploy.tar.gz"
+mv "$remote_env" "$runtime_env"
+chmod 600 "$runtime_env"
+sed -i 's/\r$//' "$runtime_env"
+if [ "$(readlink -f "$remote_root")" = "/" ]; then
+  echo "Refusing to deploy to /"
+  exit 1
+fi
+find "$remote_root" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+tar -xzf "$state_root/wenlan-web-deploy.tar.gz" -C "$remote_root"
+rm -f "$remote_root/deploy/.env" "$remote_root/deploy"/.env.backup-* 2>/dev/null || true
+cd "$remote_root/deploy"
 if [ "$runtime" = "docker" ]; then
+  cp "$runtime_env" "$state_root/.env"
   docker compose -f docker-compose.server.yml up -d --build
   docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'wenlan-web|NAMES' || true
 else
-  cd "$remote_root/app"
+  cd "$remote_root"
   npm config set registry https://registry.npmmirror.com
   npm ci --no-audit --progress=false
   set -a
-  . deploy/.env
+  . "$runtime_env"
   set +a
   npm run build
   pm2 delete wenlan-web >/dev/null 2>&1 || true
   set -a
-  . deploy/.env
+  . "$runtime_env"
   set +a
   pm2 start ./node_modules/next/dist/bin/next --name wenlan-web -- start -p "${WENLAN_HOST_PORT:-13010}" -H 0.0.0.0
   pm2 save
