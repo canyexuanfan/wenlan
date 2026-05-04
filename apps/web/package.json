@@ -14,11 +14,12 @@
     "start:local": "node ./scripts/run-local-stack.mjs start",
     "supabase:local": "node ./scripts/run-local-stack.mjs supabase",
     "start:mock": "node ./scripts/run-next-mock.mjs start",
-    "lint": "eslint && node ./scripts/check-text-encoding.mjs",
+    "lint": "eslint && node ./scripts/check-text-encoding.mjs && node ./scripts/check-two-role-model.mjs && node ./scripts/check-v1-contracts.mjs",
     "lint:text": "node ./scripts/check-text-encoding.mjs",
     "storage:migrate-cos": "node ./scripts/migrate-document-assets-to-cos.mjs",
     "storage:migrate-cos:execute": "node ./scripts/migrate-document-assets-to-cos.mjs --execute",
-    "test:roles": "node ./scripts/check-two-role-model.mjs"
+    "test:roles": "node ./scripts/check-two-role-model.mjs",
+    "test:v1": "node ./scripts/check-v1-contracts.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
