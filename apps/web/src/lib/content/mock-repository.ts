@@ -13,6 +13,7 @@ import {
 import type {
   BreadcrumbItem,
   DocumentPageData,
+  FolderRecord,
   FolderPageData,
   HomeSearchFilters,
   HomePageData,
@@ -23,17 +24,32 @@ import { normalizeSearchInput, toHref } from "./utils";
 function buildFolderBreadcrumbs(folderId: string): BreadcrumbItem[] {
   return [
     { label: "首页", href: "/" },
-    ...getFolderTrail(folderId).map((folder) => ({
+    ...(folderId ? getFolderTrail(folderId) : []).map((folder) => ({
       label: folder.name,
       href: toHref(folder.routePath),
     })),
   ];
 }
 
-function buildDocumentBreadcrumbs(folderId: string, title: string, routePath: string) {
+function buildRootFolder(): FolderRecord {
+  return {
+    id: "__root__",
+    parentId: null,
+    name: "全部内容",
+    slug: "",
+    routePath: "",
+    description: "",
+    heroNote: "",
+    accessMode: "public",
+    order: 0,
+    accent: "clay",
+  };
+}
+
+function buildDocumentBreadcrumbs(folderId: string | null, title: string, routePath: string) {
   return [
     { label: "首页", href: "/" },
-    ...getFolderTrail(folderId).map((folder) => ({
+    ...(folderId ? getFolderTrail(folderId) : []).map((folder) => ({
       label: folder.name,
       href: toHref(folder.routePath),
     })),
@@ -121,7 +137,9 @@ export async function getMockPublicRouteData(
     };
   }
 
-  const folder = getFolderById(resolvedRoute.document.folderId);
+  const folder = resolvedRoute.document.folderId
+    ? getFolderById(resolvedRoute.document.folderId)
+    : buildRootFolder();
 
   if (!folder) {
     return null;
@@ -133,7 +151,7 @@ export async function getMockPublicRouteData(
     folder,
     document: resolvedRoute.document,
     breadcrumbs: buildDocumentBreadcrumbs(
-      folder.id,
+      resolvedRoute.document.folderId,
       resolvedRoute.document.title,
       resolvedRoute.document.routePath,
     ),

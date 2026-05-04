@@ -9,6 +9,7 @@ begin
       'inherit',
       'draft',
       'public',
+      'share',
       'login',
       'private',
       'specific_users',
@@ -96,7 +97,7 @@ create unique index if not exists folders_parent_slug_key
 
 create table if not exists app.documents (
   id uuid primary key default gen_random_uuid(),
-  folder_id uuid not null references app.folders (id) on delete cascade,
+  folder_id uuid references app.folders (id) on delete cascade,
   title text not null,
   slug text not null,
   route_path text not null unique,

@@ -120,6 +120,7 @@ export type Database = {
             | "inherit"
             | "draft"
             | "public"
+            | "share"
             | "login"
             | "private"
             | "specific_users"
@@ -144,6 +145,7 @@ export type Database = {
             | "inherit"
             | "draft"
             | "public"
+            | "share"
             | "login"
             | "private"
             | "specific_users"
@@ -167,6 +169,7 @@ export type Database = {
             | "inherit"
             | "draft"
             | "public"
+            | "share"
             | "login"
             | "private"
             | "specific_users"
@@ -180,7 +183,7 @@ export type Database = {
       documents: {
         Row: {
           id: string;
-          folder_id: string;
+          folder_id: string | null;
           title: string;
           slug: string;
           route_path: string;
@@ -193,6 +196,7 @@ export type Database = {
             | "inherit"
             | "draft"
             | "public"
+            | "share"
             | "login"
             | "private"
             | "specific_users"
@@ -212,7 +216,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
-          folder_id: string;
+          folder_id?: string | null;
           title: string;
           slug: string;
           route_path: string;
@@ -225,6 +229,7 @@ export type Database = {
             | "inherit"
             | "draft"
             | "public"
+            | "share"
             | "login"
             | "private"
             | "specific_users"
@@ -243,7 +248,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
-          folder_id?: string;
+          folder_id?: string | null;
           title?: string;
           slug?: string;
           route_path?: string;
@@ -256,6 +261,7 @@ export type Database = {
             | "inherit"
             | "draft"
             | "public"
+            | "share"
             | "login"
             | "private"
             | "specific_users"
@@ -508,6 +514,7 @@ export type Database = {
         | "inherit"
         | "draft"
         | "public"
+        | "share"
         | "login"
         | "private"
         | "specific_users"

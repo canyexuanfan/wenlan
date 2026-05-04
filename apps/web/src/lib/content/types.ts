@@ -1,5 +1,6 @@
 export type AccessMode =
   | "public"
+  | "share"
   | "login"
   | "private"
   | "specific_users"
@@ -47,7 +48,7 @@ export type FolderRecord = {
 
 export type DocumentRecord = {
   id: string;
-  folderId: string;
+  folderId: string | null;
   title: string;
   slug: string;
   routePath: string;

@@ -6,6 +6,7 @@ param(
   [string]$RemoteRoot = "/www/wwwroot/wenlan.hnwen17.top",
   [string]$AppUrl = "http://wenlan.hnwen17.top",
   [string]$SupabasePublicUrl = "http://121.4.65.95:18000",
+  [string]$SupabaseServerUrl = "http://127.0.0.1:18000",
   [ValidateSet("pm2", "docker")]
   [string]$Runtime = "pm2"
 )
@@ -16,6 +17,7 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $archivePath = Join-Path $projectRoot "wenlan-web-deploy.tar.gz"
 $tempEnvPath = Join-Path $projectRoot "wenlan-web-server.env"
+$tempRemoteScriptPath = Join-Path $projectRoot "wenlan-web-remote-deploy.sh"
 $envPath = Join-Path $projectRoot ".env.local"
 
 if (!(Test-Path $envPath)) {
@@ -64,6 +66,7 @@ tar.exe -czf $archivePath -C $projectRoot `
   "WENLAN_HOST_PORT=$HostPort"
   "NEXT_PUBLIC_APP_URL=$AppUrl"
   "NEXT_PUBLIC_SUPABASE_URL=$SupabasePublicUrl"
+  "SUPABASE_SERVER_URL=$SupabaseServerUrl"
   "NEXT_PUBLIC_SUPABASE_ANON_KEY=$($pairs['NEXT_PUBLIC_SUPABASE_ANON_KEY'])"
   "SUPABASE_SERVICE_ROLE_KEY=$($pairs['SUPABASE_SERVICE_ROLE_KEY'])"
   "SUPABASE_STORAGE_BUCKET=$(if ($pairs['SUPABASE_STORAGE_BUCKET']) { $pairs['SUPABASE_STORAGE_BUCKET'] } else { 'document-assets' })"
@@ -132,10 +135,16 @@ fi
 '@
 
   $remoteScript = $remoteScript -replace "`r`n", "`n"
-  $remoteScript | ssh -i $SshKeyPath "${ServerUser}@${ServerHost}" bash -s -- $Runtime $RemoteRoot
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($tempRemoteScriptPath, $remoteScript, $utf8NoBom)
+  scp -i $SshKeyPath $tempRemoteScriptPath "${ServerUser}@${ServerHost}:/tmp/wenlan-web-remote-deploy.sh"
+  ssh -i $SshKeyPath "${ServerUser}@${ServerHost}" "bash /tmp/wenlan-web-remote-deploy.sh '$Runtime' '$RemoteRoot'"
 }
 finally {
   if (Test-Path $tempEnvPath) {
     Remove-Item $tempEnvPath -Force
+  }
+  if (Test-Path $tempRemoteScriptPath) {
+    Remove-Item $tempRemoteScriptPath -Force
   }
 }

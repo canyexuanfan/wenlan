@@ -463,7 +463,10 @@ export function getDocumentTrail(documentId: string) {
     return [];
   }
 
-  return [...getFolderTrail(document.folderId), document];
+  return [
+    ...(document.folderId ? getFolderTrail(document.folderId) : []),
+    document,
+  ];
 }
 
 export function buildFolderSegments(folderId: string) {

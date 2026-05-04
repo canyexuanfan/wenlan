@@ -45,6 +45,21 @@ function mapFolder(folder: AdminFolderRecord): FolderRecord {
   };
 }
 
+function buildRootFolderRecord(): FolderRecord {
+  return {
+    id: "__root__",
+    parentId: null,
+    name: "全部内容",
+    slug: "",
+    routePath: "",
+    description: "",
+    heroNote: "",
+    accessMode: "public",
+    order: 0,
+    accent: "clay",
+  };
+}
+
 function mapDocument(document: AdminDocumentRecord): DocumentRecord {
   return {
     id: document.id,
@@ -103,13 +118,16 @@ export default async function AdminPreviewPage({ params }: AdminPreviewPageProps
     notFound();
   }
 
-  const folder = workspace.folders.find((item) => item.id === document.folderId);
+  const folder = document.folderId
+    ? workspace.folders.find((item) => item.id === document.folderId)
+    : null;
 
-  if (!folder) {
+  if (document.folderId && !folder) {
     notFound();
   }
 
-  const folderTrail = buildFolderTrail(folder, workspace.folders);
+  const folderTrail = folder ? buildFolderTrail(folder, workspace.folders) : [];
+  const previewFolder = folder ? mapFolder(folder) : buildRootFolderRecord();
   const navigationFolders = workspace.folders
     .filter((item) => item.parentId === null)
     .sort((left, right) => left.order - right.order)
@@ -121,7 +139,7 @@ export default async function AdminPreviewPage({ params }: AdminPreviewPageProps
       data={{
         siteSettings: workspace.siteSettings,
         navigationFolders,
-        folder: mapFolder(folder),
+        folder: previewFolder,
         document: mapDocument(document),
         breadcrumbs: [
           { label: "首页", href: "/" },

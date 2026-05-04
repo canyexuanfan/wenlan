@@ -184,10 +184,12 @@ export async function getAdminWorkspaceData(
   }
 
   for (const document of documentRows) {
-    childDocumentCounts.set(
-      document.folder_id,
-      (childDocumentCounts.get(document.folder_id) ?? 0) + 1,
-    );
+    if (document.folder_id) {
+      childDocumentCounts.set(
+        document.folder_id,
+        (childDocumentCounts.get(document.folder_id) ?? 0) + 1,
+      );
+    }
   }
 
   const folderRowMap = new Map(folderRows.map((folder) => [folder.id, folder] as const));
@@ -466,17 +468,18 @@ export async function deleteAdminFolder(input: DeleteFolderInput) {
 
 export async function createAdminDocument(input: CreateDocumentInput) {
   const client = getMutableClient();
-  const folder = await getFolderById(client, input.folderId);
+  const folderId = input.folderId || null;
+  const folder = folderId ? await getFolderById(client, folderId) : null;
 
-  if (!folder) {
+  if (folderId && !folder) {
     throw new Error("文件夹不存在。");
   }
 
   const slug = sanitizeSlug(input.slug || input.title);
-  const routePath = buildRoutePath([folder.route_path, slug]);
+  const routePath = buildRoutePath([folder?.route_path, slug]);
   await assertRoutePathAvailable(client, routePath);
 
-  const orderIndex = await getNextDocumentOrder(client, input.folderId);
+  const orderIndex = await getNextDocumentOrder(client, folderId);
   const updateDate = new Date().toISOString();
   const renderMode = normalizeDocumentRenderMode(input.renderMode);
   const sourceHtml = (input.bodyHtml || DEFAULT_DOCUMENT_HTML).trim();
@@ -485,7 +488,7 @@ export async function createAdminDocument(input: CreateDocumentInput) {
   });
 
   const insertPayload: AppSchema["documents"]["Insert"] = {
-    folder_id: input.folderId,
+    folder_id: folderId,
     title: input.title.trim(),
     slug,
     route_path: routePath,
@@ -630,26 +633,27 @@ export async function moveAdminDocument(input: MoveDocumentInput) {
     throw new Error("未找到文档。");
   }
 
-  const targetFolder = await getFolderById(client, input.folderId);
+  const targetFolderId = input.folderId || null;
+  const targetFolder = targetFolderId ? await getFolderById(client, targetFolderId) : null;
 
-  if (!targetFolder) {
+  if (targetFolderId && !targetFolder) {
     throw new Error("未找到目标文件夹。");
   }
 
-  if (document.folder_id === input.folderId) {
+  if (document.folder_id === targetFolderId) {
     return input.id;
   }
 
-  const nextRoutePath = buildRoutePath([targetFolder.route_path, document.slug]);
+  const nextRoutePath = buildRoutePath([targetFolder?.route_path, document.slug]);
   await assertDocumentRouteAvailable(client, nextRoutePath, document.id);
 
   const { error } = await client
     .schema("app")
     .from("documents")
     .update({
-      folder_id: input.folderId,
+      folder_id: targetFolderId,
       route_path: nextRoutePath,
-      order_index: await getNextDocumentOrder(client, input.folderId),
+      order_index: await getNextDocumentOrder(client, targetFolderId),
     })
     .eq("id", input.id);
 
@@ -720,7 +724,7 @@ export async function deleteAdminDocument(input: DeleteDocumentInput) {
 }
 
 export async function importAdminHtmlDocument(input: {
-  folderId: string;
+  folderId: string | null;
   title?: string;
   summary?: string;
   tags?: string;
@@ -734,9 +738,9 @@ export async function importAdminHtmlDocument(input: {
   }>;
 }) {
   const client = getMutableClient();
-  const folder = await getFolderById(client, input.folderId);
+  const folder = input.folderId ? await getFolderById(client, input.folderId) : null;
 
-  if (!folder) {
+  if (input.folderId && !folder) {
     throw new Error("文件夹不存在。");
   }
 
@@ -1273,6 +1277,10 @@ function getMockAdminWorkspaceData(): AdminWorkspaceData {
   }
 
   for (const document of mockDocuments) {
+    if (!document.folderId) {
+      continue;
+    }
+
     childDocumentCounts.set(
       document.folderId,
       (childDocumentCounts.get(document.folderId) ?? 0) + 1,
@@ -1863,7 +1871,7 @@ async function resolveDocumentAccessForDetail(
     };
   }
 
-  const folder = await getFolderById(client, row.folder_id);
+  const folder = row.folder_id ? await getFolderById(client, row.folder_id) : null;
 
   if (!folder) {
     return {
@@ -2028,14 +2036,17 @@ async function getNextFolderOrder(client: AppClient, parentId: string | null) {
   return (data[0]?.order_index ?? 0) + 1;
 }
 
-async function getNextDocumentOrder(client: AppClient, folderId: string) {
-  const { data, error } = await client
+async function getNextDocumentOrder(client: AppClient, folderId: string | null) {
+  let query = client
     .schema("app")
     .from("documents")
     .select("order_index")
-    .eq("folder_id", folderId)
     .order("order_index", { ascending: false })
     .limit(1);
+
+  query = folderId === null ? query.is("folder_id", null) : query.eq("folder_id", folderId);
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -2062,13 +2073,16 @@ async function listSiblingFolders(client: AppClient, parentId: string | null) {
   return data;
 }
 
-async function listSiblingDocuments(client: AppClient, folderId: string) {
-  const { data, error } = await client
+async function listSiblingDocuments(client: AppClient, folderId: string | null) {
+  let query = client
     .schema("app")
     .from("documents")
     .select("id, order_index")
-    .eq("folder_id", folderId)
     .order("order_index", { ascending: true });
+
+  query = folderId === null ? query.is("folder_id", null) : query.eq("folder_id", folderId);
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -2503,7 +2517,7 @@ function resolveDocumentAccess(
     return resolved;
   }
 
-  const folder = folderRowMap.get(row.folder_id);
+  const folder = row.folder_id ? folderRowMap.get(row.folder_id) : null;
 
   if (folder) {
     const folderResolved = resolveFolderAccess(folder, folderRowMap, folderCache);

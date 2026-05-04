@@ -217,6 +217,8 @@ function applyDatabaseBootstrap(dockerBin) {
     "004_login_content_policies.sql",
     "005_document_render_mode.sql",
     "006_access_driven_visibility.sql",
+    "007_document_render_cache.sql",
+    "009_share_visibility_and_root_documents.sql",
   ]) {
     applySql(dockerBin, sqlFile);
   }

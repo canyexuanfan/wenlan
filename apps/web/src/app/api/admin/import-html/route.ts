@@ -24,14 +24,16 @@ export async function POST(request: Request) {
       .getAll("assets")
       .filter((entry): entry is File => entry instanceof File);
     const assetPaths = formData.getAll("assetPaths").map((entry) => String(entry));
+    const rawFolderId = String(formData.get("folderId") ?? "").trim();
     const document = await importAdminHtmlDocument({
-      folderId: String(formData.get("folderId") ?? ""),
+      folderId: rawFolderId || null,
       title: String(formData.get("title") ?? ""),
       summary: String(formData.get("summary") ?? ""),
       tags: String(formData.get("tags") ?? ""),
       accessMode: String(formData.get("accessMode") ?? "inherit") as
         | "inherit"
         | "public"
+        | "share"
         | "login"
         | "private"
         | "specific_users"

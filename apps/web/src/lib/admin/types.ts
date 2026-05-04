@@ -31,7 +31,7 @@ export type AdminFolderRecord = {
 
 export type AdminDocumentRecord = {
   id: string;
-  folderId: string;
+  folderId: string | null;
   title: string;
   slug: string;
   routePath: string;
@@ -128,7 +128,7 @@ export type ReorderFolderInput = {
 };
 
 export type CreateDocumentInput = {
-  folderId: string;
+  folderId: string | null;
   title: string;
   slug?: string;
   summary?: string;
@@ -153,7 +153,7 @@ export type UpdateDocumentInput = {
 
 export type MoveDocumentInput = {
   id: string;
-  folderId: string;
+  folderId: string | null;
 };
 
 export type DeleteDocumentInput = {

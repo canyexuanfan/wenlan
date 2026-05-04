@@ -290,6 +290,12 @@ Linux / macOS:
 \`\`\`bash
 cat wenlan/sql/001_wenlan_v1_schema.sql | docker compose exec -T db psql -U postgres -d postgres
 cat wenlan/sql/002_storage_bootstrap.sql | docker compose exec -T db psql -U postgres -d postgres
+cat wenlan/sql/003_postgrest_permissions.sql | docker compose exec -T db psql -U postgres -d postgres
+cat wenlan/sql/004_login_content_policies.sql | docker compose exec -T db psql -U postgres -d postgres
+cat wenlan/sql/005_document_render_mode.sql | docker compose exec -T db psql -U postgres -d postgres
+cat wenlan/sql/006_access_driven_visibility.sql | docker compose exec -T db psql -U postgres -d postgres
+cat wenlan/sql/007_document_render_cache.sql | docker compose exec -T db psql -U postgres -d postgres
+cat wenlan/sql/009_share_visibility_and_root_documents.sql | docker compose exec -T db psql -U postgres -d postgres
 \`\`\`
 
 PowerShell:
@@ -297,6 +303,12 @@ PowerShell:
 \`\`\`powershell
 Get-Content wenlan/sql/001_wenlan_v1_schema.sql -Raw | docker compose exec -T db psql -U postgres -d postgres
 Get-Content wenlan/sql/002_storage_bootstrap.sql -Raw | docker compose exec -T db psql -U postgres -d postgres
+Get-Content wenlan/sql/003_postgrest_permissions.sql -Raw | docker compose exec -T db psql -U postgres -d postgres
+Get-Content wenlan/sql/004_login_content_policies.sql -Raw | docker compose exec -T db psql -U postgres -d postgres
+Get-Content wenlan/sql/005_document_render_mode.sql -Raw | docker compose exec -T db psql -U postgres -d postgres
+Get-Content wenlan/sql/006_access_driven_visibility.sql -Raw | docker compose exec -T db psql -U postgres -d postgres
+Get-Content wenlan/sql/007_document_render_cache.sql -Raw | docker compose exec -T db psql -U postgres -d postgres
+Get-Content wenlan/sql/009_share_visibility_and_root_documents.sql -Raw | docker compose exec -T db psql -U postgres -d postgres
 \`\`\`
 
 ## Notes

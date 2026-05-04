@@ -275,7 +275,7 @@ async function resolveFolderAccess(folder: Pick<FolderRow, "id" | "parent_id" | 
 
 const resolveDocumentAccessCached = cache(async function resolveDocumentAccessCached(
   documentId: string,
-  folderId: string,
+  folderId: string | null,
   accessMode: DocumentRow["access_mode"],
 ): Promise<ResolvedContentAccess> {
   const document = {
@@ -289,7 +289,15 @@ const resolveDocumentAccessCached = cache(async function resolveDocumentAccessCa
     return directAccess;
   }
 
-  const folder = await getFolderRowById(document.folder_id);
+  if (!folderId) {
+    return {
+      effectiveAccessMode: "private",
+      grantTargetType: null,
+      grantTargetId: null,
+    };
+  }
+
+  const folder = await getFolderRowById(folderId);
 
   if (!folder) {
     return {
@@ -316,6 +324,7 @@ async function canViewerAccessResolvedTarget(
 
   switch (resolvedAccess.effectiveAccessMode) {
     case "public":
+    case "share":
       return true;
     case "login":
       return viewer.isAuthenticated;
@@ -357,6 +366,13 @@ async function canViewerAccessResolvedTarget(
   }
 }
 
+function isDiscoverableAccessMode(
+  mode: EffectiveContentAccessMode,
+  viewer: ContentViewer,
+) {
+  return viewerCanManageAdmin(viewer.siteRole) || mode !== "share";
+}
+
 async function canViewerAccessFolder(
   viewer: ContentViewer,
   folder: Pick<FolderRow, "id" | "parent_id" | "access_mode">,
@@ -393,10 +409,16 @@ async function canViewerAccessDocument(
 
 async function filterReadableFolders(rows: FolderRow[], viewer: ContentViewer) {
   const visibility = await Promise.all(
-    rows.map(async (row) => ({
-      row,
-      isReadable: await canViewerAccessFolder(viewer, row),
-    })),
+    rows.map(async (row) => {
+      const resolvedAccess = getDirectFolderAccess(row) ?? (await resolveFolderAccess(row));
+
+      return {
+        row,
+        isReadable:
+          (await canViewerAccessResolvedTarget(viewer, resolvedAccess)) &&
+          isDiscoverableAccessMode(resolvedAccess.effectiveAccessMode, viewer),
+      };
+    }),
   );
 
   return visibility.filter((item) => item.isReadable).map((item) => item.row);
@@ -407,10 +429,16 @@ async function filterReadableDocuments<T extends Pick<DocumentRow, "id" | "folde
   viewer: ContentViewer,
 ) {
   const visibility = await Promise.all(
-    rows.map(async (row) => ({
-      row,
-      isReadable: await canViewerAccessDocument(viewer, row),
-    })),
+    rows.map(async (row) => {
+      const resolvedAccess = getDirectDocumentAccess(row) ?? (await resolveDocumentAccess(row));
+
+      return {
+        row,
+        isReadable:
+          (await canViewerAccessResolvedTarget(viewer, resolvedAccess)) &&
+          isDiscoverableAccessMode(resolvedAccess.effectiveAccessMode, viewer),
+      };
+    }),
   );
 
   return visibility.filter((item) => item.isReadable).map((item) => item.row);
@@ -446,6 +474,8 @@ function normalizeAccessMode(mode: Database["app"]["Enums"]["access_mode"]) {
   switch (mode) {
     case "public":
       return "public" as const;
+    case "share":
+      return "share" as const;
     case "login":
       return "login" as const;
     case "draft":
@@ -478,6 +508,21 @@ function mapFolderRow(
     accessMode: normalizeAccessMode(resolvedAccess?.effectiveAccessMode ?? row.access_mode),
     order: row.order_index,
     accent: row.accent,
+  };
+}
+
+function buildRootFolderRecord(): FolderRecord {
+  return {
+    id: "__root__",
+    parentId: null,
+    name: "全部内容",
+    slug: "",
+    routePath: "",
+    description: "",
+    heroNote: "",
+    accessMode: "public",
+    order: 0,
+    accent: "clay",
   };
 }
 
@@ -638,7 +683,7 @@ async function listPublicDocuments(
   client: AppClient,
   viewer: ContentViewer,
   options?: {
-    folderId?: string;
+    folderId?: string | null;
     featuredOnly?: boolean;
     excludeDocumentId?: string;
     limit?: number;
@@ -652,8 +697,10 @@ async function listPublicDocuments(
       "id, folder_id, title, slug, route_path, summary, thumbnail_path, source_type, render_mode, publish_status, access_mode, order_index, version, author_name, reading_time, is_featured, created_by, updated_by, published_at, created_at, updated_at",
     );
 
-  if (options?.folderId) {
-    query = query.eq("folder_id", options.folderId);
+  const hasFolderFilter = Boolean(options && "folderId" in options);
+
+  if (hasFolderFilter) {
+    query = options?.folderId === null ? query.is("folder_id", null) : query.eq("folder_id", options?.folderId ?? "");
   }
 
   if (options?.featuredOnly) {
@@ -664,7 +711,7 @@ async function listPublicDocuments(
     query = query.neq("id", options.excludeDocumentId);
   }
 
-  query = options?.folderId
+  query = hasFolderFilter
     ? query.order("order_index", { ascending: true }).order("updated_at", {
         ascending: false,
       })
@@ -763,7 +810,7 @@ function filterSearchDocuments(
   foldersById: Map<string, FolderRecord>,
 ) {
   return documents.filter((document) => {
-    const folder = foldersById.get(document.folderId);
+    const folder = document.folderId ? foldersById.get(document.folderId) : undefined;
     const matchesQuery = matchesSearch(
       [
         document.title,
@@ -1162,13 +1209,22 @@ async function getSupabaseDocumentPageData(
   viewer: ContentViewer,
   documentRow: DocumentRow,
 ): Promise<DocumentPageData | null> {
-  const folderRow = await getFolderById(client, viewer, documentRow.folder_id);
+  const folderRow = documentRow.folder_id
+    ? await getFolderById(client, viewer, documentRow.folder_id)
+    : null;
 
-  if (!folderRow) {
+  if (documentRow.folder_id && !folderRow) {
     return null;
   }
 
-  const folderAccessPromise = resolveFolderAccess(folderRow);
+  const rootDocumentAccess: ResolvedContentAccess = {
+    effectiveAccessMode: "private",
+    grantTargetType: null,
+    grantTargetId: null,
+  };
+  const folderAccessPromise = folderRow
+    ? resolveFolderAccess(folderRow)
+    : Promise.resolve(rootDocumentAccess);
   const documentAccessPromise = getDirectDocumentAccess(documentRow)
     ? Promise.resolve(getDirectDocumentAccess(documentRow)!)
     : folderAccessPromise;
@@ -1176,10 +1232,10 @@ async function getSupabaseDocumentPageData(
     await Promise.all([
       getSupabaseSiteSettings(),
       listPublicFoldersByParent(client, viewer, null),
-      getFolderTrailByRoutePath(folderRow.route_path),
+      folderRow ? getFolderTrailByRoutePath(folderRow.route_path) : Promise.resolve([]),
       getDocumentOutline(documentRow.id),
       listPublicDocuments(client, viewer, {
-        folderId: folderRow.id,
+        folderId: folderRow?.id ?? null,
         excludeDocumentId: documentRow.id,
         limit: 3,
       }),
@@ -1190,7 +1246,7 @@ async function getSupabaseDocumentPageData(
     folderAccessPromise,
     documentAccessPromise,
   ]);
-  const folder = mapFolderRow(folderRow, folderAccess);
+  const folder = folderRow ? mapFolderRow(folderRow, folderAccess) : buildRootFolderRecord();
   const document = mapDocumentRow(
     documentRow,
     tagMap.get(documentRow.id) ?? [],

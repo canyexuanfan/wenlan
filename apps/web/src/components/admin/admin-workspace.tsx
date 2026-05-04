@@ -32,6 +32,7 @@ const accessLabelMap: Record<AdminAccessMode, string> = {
   inherit: "继承",
   draft: "私密",
   public: "公开",
+  share: "分享可见",
   login: "登录可见",
   private: "私密",
   specific_users: "指定用户",
@@ -153,19 +154,16 @@ export function AdminWorkspace({
     [folders],
   );
 
-  const currentFolder =
-    folderMap.get(selectedFolderId) ??
-    folders.find((folder) => folder.parentId === null) ??
-    folders[0] ??
-    null;
+  const currentFolder = selectedFolderId ? folderMap.get(selectedFolderId) ?? null : null;
   const parentFolder = currentFolder?.parentId ? folderMap.get(currentFolder.parentId) ?? null : null;
+  const currentFolderScopeId = currentFolder?.id ?? null;
 
   const childFolders = folders
-    .filter((folder) => folder.parentId === currentFolder?.id)
+    .filter((folder) => folder.parentId === currentFolderScopeId)
     .sort((left, right) => left.order - right.order);
 
   const childDocuments = documents
-    .filter((document) => document.folderId === currentFolder?.id)
+    .filter((document) => document.folderId === currentFolderScopeId)
     .sort((left, right) => left.order - right.order || right.updatedAt.localeCompare(left.updatedAt));
 
   const previewDocument =
@@ -209,14 +207,6 @@ export function AdminWorkspace({
     memberDetailRole === "admin"
       ? "可进入后台，管理内容、成员和邀请。"
       : "可按文档权限访问公开、登录可见或被授权内容。";
-
-  useEffect(() => {
-    if (!currentFolder) {
-      return;
-    }
-
-    setSelectedFolderId((current) => current || currentFolder.id);
-  }, [currentFolder]);
 
   useEffect(() => {
     if (!currentFolder) {
@@ -293,16 +283,12 @@ export function AdminWorkspace({
         }
 
         const nextWorkspace = payload as AdminWorkspaceData;
-        const nextFolderId =
-          preferred?.folderId ??
-          nextWorkspace.folders.find((folder) => folder.parentId === null)?.id ??
-          nextWorkspace.folders[0]?.id ??
-          "";
+        const nextFolderId = preferred?.folderId ?? "";
+        const nextFolderScopeId = nextFolderId || null;
 
         const nextDocumentId =
           preferred?.documentId ??
-          nextWorkspace.documents.find((document) => document.folderId === nextFolderId)?.id ??
-          nextWorkspace.documents[0]?.id ??
+          nextWorkspace.documents.find((document) => document.folderId === nextFolderScopeId)?.id ??
           "";
 
         setWorkspace(nextWorkspace);
@@ -339,7 +325,8 @@ export function AdminWorkspace({
   function handleSelectFolder(folderId: string) {
     setEditTarget(null);
     setSelectedFolderId(folderId);
-    const nextDocument = documents.find((document) => document.folderId === folderId);
+    const nextFolderScopeId = folderId || null;
+    const nextDocument = documents.find((document) => document.folderId === nextFolderScopeId);
     setSelectedDocumentId(nextDocument?.id ?? "");
   }
 
@@ -363,7 +350,7 @@ export function AdminWorkspace({
       renderMode: document.renderMode,
       featured: document.featured,
     });
-    setDocumentFolderDraftId(document.folderId);
+    setDocumentFolderDraftId(document.folderId ?? "__root__");
   }
 
   function openFolderEditor(folder: AdminFolderRecord) {
@@ -474,6 +461,20 @@ export function AdminWorkspace({
         sourceFolder.parentId !== targetFolder.id &&
         !targetFolder.routePath.startsWith(`${sourceFolder.routePath}/`),
     );
+  }
+
+  function canDropOnRoot(resource: DragResource | null) {
+    if (!workspace?.canMutate || !resource) {
+      return false;
+    }
+
+    if (resource.type === "document") {
+      const document = documents.find((item) => item.id === resource.id);
+      return Boolean(document && document.folderId !== null);
+    }
+
+    const sourceFolder = folderMap.get(resource.id);
+    return Boolean(sourceFolder && sourceFolder.parentId !== null);
   }
 
   function handleResourceDragStart(
@@ -641,7 +642,7 @@ export function AdminWorkspace({
 
       setStatusMessage(`已调整文档“${sourceDocument.title}”的顺序。`);
       await loadWorkspace({
-        folderId: targetDocument.folderId,
+        folderId: targetDocument.folderId ?? "",
         documentId: sourceDocument.id,
       });
     });
@@ -928,18 +929,18 @@ export function AdminWorkspace({
   function handleCreateFolderSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!workspace?.canMutate || !currentFolder) {
+    if (!workspace?.canMutate) {
       return;
     }
 
     runMutation(async () => {
       const payload = await submitJson("/api/admin/folders", "POST", {
-        parentId: currentFolder.id,
+        parentId: currentFolder?.id ?? null,
         name: newFolderName,
         slug: newFolderSlug,
         description: newFolderDescription,
         accessMode: "inherit",
-        accent: currentFolder.accent,
+        accent: currentFolder?.accent ?? "clay",
       });
 
       setNewFolderName("");
@@ -947,31 +948,79 @@ export function AdminWorkspace({
       setNewFolderDescription("");
       setOpenCreatePanel(null);
       setStatusMessage(`已创建文件夹“${payload.name}”。`);
-      await loadWorkspace({ folderId: currentFolder.id });
+      await loadWorkspace({ folderId: currentFolder?.id ?? "" });
+    });
+  }
+
+  function handleRootDragOver(event: React.DragEvent<HTMLElement>) {
+    const resource = readDragResource(event);
+
+    if (!canDropOnRoot(resource)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setFolderDropTarget(null);
+    setDropTargetFolderId("__root__");
+  }
+
+  function handleRootDragLeave(event: React.DragEvent<HTMLElement>) {
+    const nextTarget = event.relatedTarget;
+
+    if (
+      dropTargetFolderId === "__root__" &&
+      (!nextTarget || !event.currentTarget.contains(nextTarget as Node))
+    ) {
+      setDropTargetFolderId("");
+    }
+  }
+
+  function handleRootDrop(event: React.DragEvent<HTMLElement>) {
+    const resource = readDragResource(event);
+
+    if (!canDropOnRoot(resource) || !resource) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setDragResource(null);
+    setDropTargetFolderId("");
+    setFolderDropTarget(null);
+
+    runMutation(async () => {
+      if (resource.type === "document") {
+        const sourceName = documents.find((item) => item.id === resource.id)?.title ?? "文档";
+        await submitJson("/api/admin/documents", "PATCH", {
+          action: "move",
+          id: resource.id,
+          folderId: null,
+        });
+        await loadWorkspace({
+          folderId: "",
+          documentId: resource.id,
+          statusMessage: `已移动文档“${sourceName}”到“全部内容”。`,
+        });
+        return;
+      }
+
+      const sourceName = folderMap.get(resource.id)?.name ?? "文件夹";
+      await submitJson("/api/admin/folders", "PATCH", {
+        action: "move",
+        id: resource.id,
+        parentId: null,
+      });
+      await loadWorkspace({
+        folderId: "",
+        documentId: selectedDocumentId,
+        statusMessage: `已移动文件夹“${sourceName}”到“全部内容”。`,
+      });
     });
   }
 
   async function getImportTargetFolderId() {
-    if (currentFolder) {
-      return currentFolder.id;
-    }
-
-    const existingFolder = folders.find((folder) => folder.parentId === null) ?? folders[0];
-
-    if (existingFolder) {
-      return existingFolder.id;
-    }
-
-    const createdFolder = (await submitJson("/api/admin/folders", "POST", {
-      parentId: null,
-      name: "文档",
-      slug: "documents",
-      description: "",
-      accessMode: "inherit",
-      accent: "clay",
-    })) as AdminFolderRecord;
-
-    return createdFolder.id;
+    return currentFolder?.id ?? null;
   }
 
   function handleFolderSave(event: React.FormEvent<HTMLFormElement>) {
@@ -1014,7 +1063,10 @@ export function AdminWorkspace({
     }
 
     runMutation(async () => {
-      const nextFolderId = documentFolderDraftId || documentEditorRecord.folderId;
+      const nextFolderId =
+        documentFolderDraftId === "__root__"
+          ? null
+          : documentFolderDraftId || documentEditorRecord.folderId;
       const nextDocumentRecord: AdminDocumentRecord = {
         ...documentEditorRecord,
         title: documentDraft.title,
@@ -1049,7 +1101,7 @@ export function AdminWorkspace({
       documentDetailCacheRef.current.set(documentEditorRecord.id, nextDocumentRecord);
 
       await loadWorkspace({
-        folderId: nextFolderId,
+        folderId: nextFolderId ?? "",
         documentId: documentEditorRecord.id,
         statusMessage: `已保存文档“${documentDraft.title}”。`,
       });
@@ -1077,7 +1129,7 @@ export function AdminWorkspace({
     try {
       const targetFolderId = await getImportTargetFolderId();
       const formData = new FormData();
-      formData.set("folderId", targetFolderId);
+      formData.set("folderId", targetFolderId ?? "");
       formData.set("accessMode", importAccessMode);
       formData.set("renderMode", importRenderMode);
       formData.set("documentFile", importHtmlFile);
@@ -1108,7 +1160,7 @@ export function AdminWorkspace({
       setImportAccessMode("inherit");
       setImportRenderMode("site");
       setOpenCreatePanel(null);
-      await loadWorkspace({ folderId: targetFolderId, documentId: payload.id });
+      await loadWorkspace({ folderId: targetFolderId ?? "", documentId: payload.id });
       setStatusMessage(`已导入文档“${payload.title}”。`);
     } catch (error) {
       setStatusMessage(formatAdminError(error, "导入文档失败，请稍后再试。"));
@@ -1166,7 +1218,7 @@ export function AdminWorkspace({
 
       setStatusMessage(`已删除文档“${document.title}”。`);
       await loadWorkspace({
-        folderId: currentFolder?.id ?? document.folderId,
+        folderId: currentFolder?.id ?? document.folderId ?? "",
         documentId: selectedDocumentId === document.id ? "" : selectedDocumentId,
       });
       if (editingDocumentId === document.id) {
@@ -1653,7 +1705,7 @@ export function AdminWorkspace({
               </p>
             </div>
             <span className="tag-chip">
-              导入位置：{currentFolder?.name ?? "当前文件夹"}
+              导入位置：{currentFolder?.name ?? "全部内容"}
             </span>
           </div>
 
@@ -1785,14 +1837,14 @@ export function AdminWorkspace({
                   })
                 ) : (
                   <span className="crumb-item" aria-current="page">
-                    请选择文件夹
+                    全部内容
                   </span>
                 )}
               </nav>
               <div
                 className="resource-row-actions"
                 role="group"
-                aria-label={`当前文件夹操作：${currentFolder?.name ?? "未选择文件夹"}`}
+                aria-label={`当前层级操作：${currentFolder?.name ?? "全部内容"}`}
               >
                 {currentFolder ? (
                   <button
@@ -1851,17 +1903,17 @@ export function AdminWorkspace({
             </div>
             <div className="manager-status-row">
               <div className="manager-title-cluster">
-                <h2 className="manager-title">{currentFolder?.name ?? "请选择文件夹"}</h2>
-                {currentFolder ? (
-                  <span className="manager-count-pill">
-                    {currentFolder.childFolderCount} 个子文件夹 · {currentFolder.childDocumentCount} 篇文档
-                  </span>
-                ) : null}
+                <h2 className="manager-title">{currentFolder?.name ?? "全部内容"}</h2>
+                <span className="manager-count-pill">
+                  {currentFolder
+                    ? `${currentFolder.childFolderCount} 个子文件夹 · ${currentFolder.childDocumentCount} 篇文档`
+                    : `${childFolders.length} 个顶级文件夹 · ${childDocuments.length} 篇顶级文档`}
+                </span>
               </div>
               <p className="mini-caption">
                 {currentFolder
                   ? `当前层级：${folderTrail.map((item) => item.name).join(" / ")}`
-                  : "先从左侧选择一个文件夹，再管理右侧内容。"}
+                  : "当前层级：全部内容，可创建顶级文件夹或顶级文档。"}
               </p>
             </div>
           </div>
@@ -1895,7 +1947,23 @@ export function AdminWorkspace({
 
         <div className="explorer-body">
           <aside className="tree-panel explorer-tree-pane">
-            <div className="tree-list">{renderTree(null)}</div>
+            <div className="tree-list">
+              <button
+                type="button"
+                className={`tree-node ${!selectedFolderId ? "is-active" : ""} ${
+                  dropTargetFolderId === "__root__" ? "is-drop-target" : ""
+                }`}
+                style={{ paddingLeft: "18px" }}
+                aria-pressed={!selectedFolderId}
+                onClick={() => handleSelectFolder("")}
+                onDragOver={handleRootDragOver}
+                onDragLeave={handleRootDragLeave}
+                onDrop={handleRootDrop}
+              >
+                全部内容
+              </button>
+              {renderTree(null)}
+            </div>
           </aside>
           <div
             className="explorer-resizer"
@@ -2274,7 +2342,7 @@ export function AdminWorkspace({
                     value={folderParentDraftId}
                     onChange={(event) => setFolderParentDraftId(event.target.value)}
                   >
-                    <option value="__root__">根目录</option>
+                    <option value="__root__">全部内容</option>
                     {availableParentFolders.map((folder) => (
                       <option key={folder.id} value={folder.id}>
                         {folder.routePath}
@@ -2358,6 +2426,7 @@ export function AdminWorkspace({
                     value={documentFolderDraftId}
                     onChange={(event) => setDocumentFolderDraftId(event.target.value)}
                   >
+                    <option value="__root__">全部内容</option>
                     {folders.map((folder) => (
                       <option key={folder.id} value={folder.id}>
                         {folder.routePath}
