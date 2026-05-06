@@ -17,6 +17,7 @@ import type {
   AdminDocumentRecord,
   AdminFolderRecord,
   AdminGroupRecord,
+  AdminInviteRecord,
   AdminProfileRecord,
   AdminWorkspaceData,
 } from "@/lib/admin/types";
@@ -90,6 +91,16 @@ const emptyDocumentDraft: DocumentDraft = {
 type AdminWorkspaceMode = "content" | "members";
 type MembersView = "members" | "invites" | "groups";
 type EditTarget = "folder" | "document";
+type CreatedInviteRecord = AdminInviteRecord & {
+  invitePath: string;
+  inviteToken: string;
+};
+type VisibleInviteSecret = {
+  inviteId: string;
+  inviteToken: string;
+  inviteLink: string;
+  createdAt: string;
+};
 
 export function AdminWorkspace({
   mode = "content",
@@ -123,6 +134,10 @@ export function AdminWorkspace({
   const [isImporting, setIsImporting] = useState(false);
   const [inviteRole, setInviteRole] = useState<EditableSiteRole>("viewer");
   const [inviteExpiryDays, setInviteExpiryDays] = useState("7");
+  const [visibleInviteSecrets, setVisibleInviteSecrets] = useState<
+    Record<string, VisibleInviteSecret>
+  >({});
+  const [latestInviteId, setLatestInviteId] = useState("");
   const [profileRoleDrafts, setProfileRoleDrafts] = useState<Record<string, EditableSiteRole>>({});
   const [membersView, setMembersView] = useState<MembersView>("members");
   const [memberDetailTarget, setMemberDetailTarget] = useState<AdminProfileRecord | null>(null);
@@ -148,6 +163,7 @@ export function AdminWorkspace({
   const groups = useMemo(() => workspace?.groups ?? [], [workspace]);
   const canManageMembers = workspace?.viewer.canManageMembers ?? false;
   const availableInviteRoles = useMemo(() => allSiteRoles, []);
+  const latestInviteSecret = latestInviteId ? visibleInviteSecrets[latestInviteId] ?? null : null;
 
   const folderMap = useMemo(
     () => new Map(folders.map((folder) => [folder.id, folder])),
@@ -892,6 +908,56 @@ export function AdminWorkspace({
     return new URL(invitePath, window.location.origin).toString();
   }
 
+  function rememberInviteSecret(payload: CreatedInviteRecord, replacedInviteId?: string) {
+    const secret: VisibleInviteSecret = {
+      inviteId: payload.id,
+      inviteToken: payload.inviteToken,
+      inviteLink: buildInviteLink(payload.invitePath),
+      createdAt: new Date().toISOString(),
+    };
+
+    setVisibleInviteSecrets((current) => {
+      const next = { ...current };
+
+      if (replacedInviteId) {
+        delete next[replacedInviteId];
+      }
+
+      next[secret.inviteId] = secret;
+      return next;
+    });
+    setLatestInviteId(secret.inviteId);
+
+    return secret;
+  }
+
+  async function copyTextToClipboard(value: string) {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      return false;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function handleCopyVisibleInvite(secret: VisibleInviteSecret, copyTarget: "token" | "link") {
+    const label = copyTarget === "token" ? "邀请码" : "注册链接";
+    const value = copyTarget === "token" ? secret.inviteToken : secret.inviteLink;
+
+    runMutation(async () => {
+      const copied = await copyTextToClipboard(value);
+      setStatusMessage(copied ? `已复制${label}。` : `${label}：${value}`);
+    });
+  }
+
+  function handleMissingInviteSecret() {
+    setStatusMessage("旧邀请码只保存加密校验值，无法反查明文。请点“重新生成”后再复制。");
+  }
+
   function canEditMemberRole() {
     return canManageMembers;
   }
@@ -1235,28 +1301,19 @@ export function AdminWorkspace({
     }
 
     runMutation(async () => {
-      const payload = await submitJson("/api/admin/invites", "POST", {
+      const payload = (await submitJson("/api/admin/invites", "POST", {
         siteRole: inviteRole,
         expiresInDays: Number(inviteExpiryDays) || 7,
-      });
+      })) as CreatedInviteRecord;
 
       setInviteExpiryDays("7");
-      const inviteLink = buildInviteLink(payload.invitePath);
-      let copied = false;
-
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(inviteLink);
-          copied = true;
-        } catch {
-          copied = false;
-        }
-      }
+      const secret = rememberInviteSecret(payload);
+      const copied = await copyTextToClipboard(secret.inviteLink);
 
       setStatusMessage(
         copied
-          ? `邀请码 ${payload.inviteToken} 已生成，注册链接已复制到剪贴板。`
-          : `邀请码 ${payload.inviteToken} 已生成，请发送注册链接：${inviteLink}`,
+          ? `邀请码 ${secret.inviteToken} 已生成，注册链接已复制到剪贴板。`
+          : `邀请码 ${secret.inviteToken} 已生成，请在下方结果卡片复制。`,
       );
       await loadWorkspace({ folderId: currentFolder?.id, documentId: previewDocument?.id });
     });
@@ -1361,23 +1418,16 @@ export function AdminWorkspace({
     }
 
     runMutation(async () => {
-      const payload = await submitJson("/api/admin/invites", "PATCH", { id: inviteId });
-      const inviteLink = buildInviteLink(payload.invitePath);
-      let copied = false;
-
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(inviteLink);
-          copied = true;
-        } catch {
-          copied = false;
-        }
-      }
+      const payload = (await submitJson("/api/admin/invites", "PATCH", {
+        id: inviteId,
+      })) as CreatedInviteRecord;
+      const secret = rememberInviteSecret(payload, inviteId);
+      const copied = await copyTextToClipboard(secret.inviteLink);
 
       setStatusMessage(
         copied
-          ? `已重新生成邀请码 ${payload.inviteToken}，注册链接已复制到剪贴板。`
-          : `已重新生成邀请码 ${payload.inviteToken}，请发送注册链接：${inviteLink}`,
+          ? `已重新生成邀请码 ${secret.inviteToken}，注册链接已复制到剪贴板。`
+          : `已重新生成邀请码 ${secret.inviteToken}，请在下方结果卡片复制。`,
       );
       await loadWorkspace({ folderId: currentFolder?.id, documentId: previewDocument?.id });
     });
@@ -1403,6 +1453,12 @@ export function AdminWorkspace({
 
     runMutation(async () => {
       await submitJson("/api/admin/invites", "DELETE", { id: inviteId });
+      setVisibleInviteSecrets((current) => {
+        const next = { ...current };
+        delete next[inviteId];
+        return next;
+      });
+      setLatestInviteId((current) => (current === inviteId ? "" : current));
       setStatusMessage("已作废该邀请。");
       await loadWorkspace({ folderId: currentFolder?.id, documentId: previewDocument?.id });
     });
@@ -2571,6 +2627,37 @@ export function AdminWorkspace({
                 >
                   生成邀请码
                 </button>
+                {latestInviteSecret ? (
+                  <div className="invite-result-card" role="status" aria-live="polite">
+                    <div>
+                      <p className="section-eyebrow">本次生成的邀请码</p>
+                      <code className="invite-secret-code">{latestInviteSecret.inviteToken}</code>
+                    </div>
+                    <div className="invite-secret-line">
+                      <span>注册链接</span>
+                      <input value={latestInviteSecret.inviteLink} readOnly aria-label="注册链接" />
+                    </div>
+                    <div className="invite-result-actions">
+                      <button
+                        type="button"
+                        className="hero-button"
+                        onClick={() => handleCopyVisibleInvite(latestInviteSecret, "token")}
+                      >
+                        复制邀请码
+                      </button>
+                      <button
+                        type="button"
+                        className="hero-button hero-button-strong"
+                        onClick={() => handleCopyVisibleInvite(latestInviteSecret, "link")}
+                      >
+                        复制注册链接
+                      </button>
+                    </div>
+                    <p className="mini-caption">
+                      明文邀请码只在生成后显示。刷新页面后如需再次发送，请在邀请记录里重新生成。
+                    </p>
+                  </div>
+                ) : null}
               </form>
               <div className="admin-editor-card">
                 <div className="preview-head">
@@ -2585,10 +2672,13 @@ export function AdminWorkspace({
                   <span>状态</span>
                   <span>操作</span>
                 </div>
-                {invites.map((invite) => (
-                  <div key={invite.id} className="list-row access-list-row">
-                    <div>
-                      <strong>{invite.email ?? "未绑定邮箱"}</strong>
+                {invites.map((invite) => {
+                  const inviteSecret = visibleInviteSecrets[invite.id] ?? null;
+
+                  return (
+                    <div key={invite.id} className="list-row access-list-row">
+                      <div>
+                        <strong>{invite.email ?? "未绑定邮箱"}</strong>
                         <p>创建于 {formatDate(invite.createdAt.slice(0, 10))}</p>
                       </div>
                       <span>{getSiteRoleLabel(invite.siteRole)}</span>
@@ -2603,6 +2693,36 @@ export function AdminWorkspace({
                           <span className="table-action-muted">已完成</span>
                         ) : (
                           <>
+                            <button
+                              type="button"
+                              className="resource-edit-button row-edit-button"
+                              aria-label={`复制邀请码：${invite.email ?? "开放邀请"}`}
+                              data-tooltip={inviteSecret ? "复制邀请码" : "需重新生成"}
+                              title={inviteSecret ? "复制邀请码" : "旧邀请码无法反查，请重新生成"}
+                              onClick={() =>
+                                inviteSecret
+                                  ? handleCopyVisibleInvite(inviteSecret, "token")
+                                  : handleMissingInviteSecret()
+                              }
+                              disabled={!canManageMembers}
+                            >
+                              <span aria-hidden="true">码</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="resource-edit-button row-edit-button"
+                              aria-label={`复制注册链接：${invite.email ?? "开放邀请"}`}
+                              data-tooltip={inviteSecret ? "复制链接" : "需重新生成"}
+                              title={inviteSecret ? "复制注册链接" : "旧链接无法反查，请重新生成"}
+                              onClick={() =>
+                                inviteSecret
+                                  ? handleCopyVisibleInvite(inviteSecret, "link")
+                                  : handleMissingInviteSecret()
+                              }
+                              disabled={!canManageMembers}
+                            >
+                              <span aria-hidden="true">链</span>
+                            </button>
                             <button
                               type="button"
                               className="resource-edit-button row-edit-button"
@@ -2629,7 +2749,8 @@ export function AdminWorkspace({
                         )}
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               </div>
             </div>
