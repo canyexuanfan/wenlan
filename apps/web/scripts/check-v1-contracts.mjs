@@ -30,6 +30,10 @@ const shareMigrationSql = readFileSync(
   join(root, "../../infra/supabase/sql/009_share_visibility_and_root_documents.sql"),
   "utf8",
 );
+const inviteEmailMigrationSql = readFileSync(
+  join(root, "../../infra/supabase/sql/008_invite_email_optional.sql"),
+  "utf8",
+);
 
 assertContract(
   /export type AccessMode =[\s\S]*\|\s*"share"/.test(contentTypes),
@@ -72,6 +76,13 @@ assertContract(
     adminRepository.includes("return /\\.(md|markdown)$/i.test(fileName)") &&
     adminRepository.includes('return isMarkdownImportFile(file.name) ? "text/markdown" : "text/html"'),
   "Import must continue to support share-visible access and Markdown files.",
+);
+assertContract(
+  /create table if not exists app\.invite_tokens[\s\S]*email text/.test(schemaSql) &&
+    inviteEmailMigrationSql.includes("alter column email drop not null") &&
+    /invite_tokens:[\s\S]*Row:[\s\S]*email: string \| null;/.test(databaseTypes) &&
+    adminRepository.includes("const email = sanitizeOptionalEmail(input.email)"),
+  "Invitation links must be creatable without binding an email address.",
 );
 assertContract(
   nextConfig.includes("media-src 'self' data: blob:"),
