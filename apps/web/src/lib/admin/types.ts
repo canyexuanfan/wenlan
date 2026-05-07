@@ -70,6 +70,9 @@ export type AdminInviteRecord = {
   siteRole: AdminSiteRole;
   expiresAt: string;
   usedAt: string | null;
+  inviteToken: string | null;
+  maxUses: number;
+  useCount: number;
   createdAt: string;
 };
 
@@ -169,6 +172,7 @@ export type CreateInviteInput = {
   email?: string | null;
   siteRole: EditableSiteRole;
   expiresInDays?: number;
+  maxUses?: number;
 };
 
 export type CreateInviteResult = AdminInviteRecord & {

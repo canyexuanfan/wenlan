@@ -66,10 +66,13 @@ create table if not exists app.site_settings (
 create table if not exists app.invite_tokens (
   id uuid primary key default gen_random_uuid(),
   email text,
+  invite_token text,
   token_hash text not null unique,
   site_role app.site_role not null default 'viewer',
   expires_at timestamptz not null,
   used_at timestamptz,
+  max_uses integer not null default 1 check (max_uses between 1 and 999),
+  use_count integer not null default 0 check (use_count >= 0 and use_count <= max_uses),
   created_by uuid references app.profiles (id) on delete set null,
   created_at timestamptz not null default timezone('utc'::text, now())
 );

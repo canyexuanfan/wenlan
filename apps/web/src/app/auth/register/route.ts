@@ -84,13 +84,17 @@ export async function POST(request: Request) {
       siteRole: invite.siteRole,
     });
 
+    const nextUseCount = Math.min(invite.maxUses, invite.useCount + 1);
+    const inviteConsumedAt = nextUseCount >= invite.maxUses ? new Date().toISOString() : null;
     const { error: inviteUpdateError } = await adminClient
       .schema("app")
       .from("invite_tokens")
       .update({
-        used_at: new Date().toISOString(),
+        use_count: nextUseCount,
+        used_at: inviteConsumedAt,
       })
-      .eq("token_hash", hashInviteToken(token));
+      .eq("token_hash", hashInviteToken(token))
+      .lt("use_count", invite.maxUses);
 
     if (inviteUpdateError) {
       return NextResponse.redirect(

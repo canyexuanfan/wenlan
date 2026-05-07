@@ -53,29 +53,38 @@ export type Database = {
         Row: {
           id: string;
           email: string | null;
+          invite_token: string | null;
           token_hash: string;
           site_role: "owner" | "admin" | "editor" | "publisher" | "viewer";
           expires_at: string;
           used_at: string | null;
+          max_uses: number;
+          use_count: number;
           created_by: string | null;
           created_at: string;
         };
         Insert: {
           id?: string;
           email?: string | null;
+          invite_token?: string | null;
           token_hash: string;
           site_role?: "owner" | "admin" | "editor" | "publisher" | "viewer";
           expires_at: string;
           used_at?: string | null;
+          max_uses?: number;
+          use_count?: number;
           created_by?: string | null;
           created_at?: string;
         };
         Update: {
           email?: string | null;
+          invite_token?: string | null;
           token_hash?: string;
           site_role?: "owner" | "admin" | "editor" | "publisher" | "viewer";
           expires_at?: string;
           used_at?: string | null;
+          max_uses?: number;
+          use_count?: number;
           created_by?: string | null;
         };
       };

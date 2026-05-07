@@ -100,6 +100,8 @@ type VisibleInviteSecret = {
   inviteToken: string;
   inviteLink: string;
   createdAt: string;
+  maxUses: number;
+  useCount: number;
 };
 
 export function AdminWorkspace({
@@ -134,6 +136,7 @@ export function AdminWorkspace({
   const [isImporting, setIsImporting] = useState(false);
   const [inviteRole, setInviteRole] = useState<EditableSiteRole>("viewer");
   const [inviteExpiryDays, setInviteExpiryDays] = useState("7");
+  const [inviteMaxUses, setInviteMaxUses] = useState("1");
   const [visibleInviteSecrets, setVisibleInviteSecrets] = useState<
     Record<string, VisibleInviteSecret>
   >({});
@@ -914,6 +917,8 @@ export function AdminWorkspace({
       inviteToken: payload.inviteToken,
       inviteLink: buildInviteLink(payload.invitePath),
       createdAt: new Date().toISOString(),
+      maxUses: payload.maxUses,
+      useCount: payload.useCount,
     };
 
     setVisibleInviteSecrets((current) => {
@@ -929,6 +934,27 @@ export function AdminWorkspace({
     setLatestInviteId(secret.inviteId);
 
     return secret;
+  }
+
+  function getStoredInviteSecret(invite: AdminInviteRecord) {
+    const cachedSecret = visibleInviteSecrets[invite.id] ?? null;
+
+    if (cachedSecret) {
+      return cachedSecret;
+    }
+
+    if (!invite.inviteToken) {
+      return null;
+    }
+
+    return {
+      inviteId: invite.id,
+      inviteToken: invite.inviteToken,
+      inviteLink: buildInviteLink(`/invite/${invite.inviteToken}`),
+      createdAt: invite.createdAt,
+      maxUses: invite.maxUses,
+      useCount: invite.useCount,
+    } satisfies VisibleInviteSecret;
   }
 
   async function copyTextToClipboard(value: string) {
@@ -955,7 +981,7 @@ export function AdminWorkspace({
   }
 
   function handleMissingInviteSecret() {
-    setStatusMessage("旧邀请码只保存加密校验值，无法反查明文。请点“重新生成”后再复制。");
+    setStatusMessage("旧邀请码没有保存明文，请重新生成后再复制。");
   }
 
   function getInviteTargetLabel(invite: AdminInviteRecord) {
@@ -963,7 +989,30 @@ export function AdminWorkspace({
       return invite.email;
     }
 
-    return invite.usedAt ? "开放邀请已使用" : "开放邀请";
+    return invite.useCount > 0 ? "开放邀请已使用" : "开放邀请";
+  }
+
+  function getInviteStatusLabel(invite: AdminInviteRecord) {
+    if (invite.useCount >= invite.maxUses) {
+      return "已用完";
+    }
+
+    if (invite.useCount > 0) {
+      return "使用中";
+    }
+
+    return "待使用";
+  }
+
+  function handleInviteSecretView(invite: AdminInviteRecord) {
+    const secret = getStoredInviteSecret(invite);
+
+    if (!secret) {
+      handleMissingInviteSecret();
+      return;
+    }
+
+    setStatusMessage(`邀请码：${secret.inviteToken}，使用次数：${invite.useCount}/${invite.maxUses}`);
   }
 
   function canEditMemberRole() {
@@ -1312,9 +1361,11 @@ export function AdminWorkspace({
       const payload = (await submitJson("/api/admin/invites", "POST", {
         siteRole: inviteRole,
         expiresInDays: Number(inviteExpiryDays) || 7,
+        maxUses: Number(inviteMaxUses) || 1,
       })) as CreatedInviteRecord;
 
       setInviteExpiryDays("7");
+      setInviteMaxUses("1");
       const secret = rememberInviteSecret(payload);
       const copied = await copyTextToClipboard(secret.inviteLink);
 
@@ -2627,6 +2678,17 @@ export function AdminWorkspace({
                       disabled={!canManageMembers}
                     />
                   </label>
+                  <label>
+                    使用数量
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={inviteMaxUses}
+                      onChange={(event) => setInviteMaxUses(event.target.value)}
+                      disabled={!canManageMembers}
+                    />
+                  </label>
                 </div>
                 <button
                   type="submit"
@@ -2662,7 +2724,7 @@ export function AdminWorkspace({
                       </button>
                     </div>
                     <p className="mini-caption">
-                      明文邀请码只在生成后显示。刷新页面后如需再次发送，请在邀请记录里重新生成。
+                      使用次数：{latestInviteSecret.useCount}/{latestInviteSecret.maxUses}。邀请码会保留在后台，后续可在记录里查看或复制。
                     </p>
                   </div>
                 ) : null}
@@ -2677,11 +2739,12 @@ export function AdminWorkspace({
                   <span>目标</span>
                   <span>角色</span>
                   <span>过期时间</span>
+                  <span>使用次数</span>
                   <span>状态</span>
                   <span>操作</span>
                 </div>
                 {invites.map((invite) => {
-                  const inviteSecret = visibleInviteSecrets[invite.id] ?? null;
+                  const inviteSecret = getStoredInviteSecret(invite);
                   const inviteTargetLabel = getInviteTargetLabel(invite);
 
                   return (
@@ -2692,16 +2755,25 @@ export function AdminWorkspace({
                       </div>
                       <span>{getSiteRoleLabel(invite.siteRole)}</span>
                       <span>{new Date(invite.expiresAt).toLocaleDateString("zh-CN")}</span>
-                      <span>{invite.usedAt ? "已使用" : "待使用"}</span>
+                      <span>{invite.useCount}/{invite.maxUses}</span>
+                      <span>{getInviteStatusLabel(invite)}</span>
                       <div
                         className="resource-row-actions"
                         role="group"
                         aria-label={`邀请操作：${inviteTargetLabel}`}
                       >
-                        {invite.usedAt ? (
-                          <span className="table-action-muted">已完成</span>
-                        ) : (
-                          <>
+                        <>
+                            <button
+                              type="button"
+                              className="resource-edit-button row-edit-button"
+                              aria-label={`查看邀请码：${inviteTargetLabel}`}
+                              data-tooltip={inviteSecret ? "查看邀请码" : "需重新生成"}
+                              title={inviteSecret ? "查看邀请码" : "旧邀请码无法反查，请重新生成"}
+                              onClick={() => handleInviteSecretView(invite)}
+                              disabled={!canManageMembers}
+                            >
+                              <span aria-hidden="true">看</span>
+                            </button>
                             <button
                               type="button"
                               className="resource-edit-button row-edit-button"
@@ -2755,7 +2827,6 @@ export function AdminWorkspace({
                               <span aria-hidden="true">×</span>
                             </button>
                           </>
-                        )}
                       </div>
                     </div>
                   );

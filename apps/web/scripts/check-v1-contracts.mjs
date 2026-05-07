@@ -34,6 +34,10 @@ const inviteEmailMigrationSql = readFileSync(
   join(root, "../../infra/supabase/sql/008_invite_email_optional.sql"),
   "utf8",
 );
+const inviteMultiUseMigrationSql = readFileSync(
+  join(root, "../../infra/supabase/sql/010_invite_multi_use.sql"),
+  "utf8",
+);
 
 assertContract(
   /export type AccessMode =[\s\S]*\|\s*"share"/.test(contentTypes),
@@ -83,6 +87,20 @@ assertContract(
     /invite_tokens:[\s\S]*Row:[\s\S]*email: string \| null;/.test(databaseTypes) &&
     adminRepository.includes("const email = sanitizeOptionalEmail(input.email)"),
   "Invitation links must be creatable without binding an email address.",
+);
+assertContract(
+  /create table if not exists app\.invite_tokens[\s\S]*invite_token text[\s\S]*max_uses integer[\s\S]*use_count integer/.test(
+    schemaSql,
+  ) &&
+    inviteMultiUseMigrationSql.includes("add column if not exists invite_token text") &&
+    inviteMultiUseMigrationSql.includes("add column if not exists max_uses integer") &&
+    inviteMultiUseMigrationSql.includes("add column if not exists use_count integer") &&
+    /invite_tokens:[\s\S]*Row:[\s\S]*invite_token: string \| null;[\s\S]*max_uses: number;[\s\S]*use_count: number;/.test(
+      databaseTypes,
+    ) &&
+    adminRepository.includes("max_uses: maxUses") &&
+    adminRepository.includes("use_count: 0"),
+  "Invitation links must keep plaintext admin display and configurable usage counts.",
 );
 assertContract(
   nextConfig.includes("media-src 'self' data: blob:"),

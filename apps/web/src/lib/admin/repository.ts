@@ -855,15 +855,19 @@ export async function createAdminInvite(input: CreateInviteInput, viewer: AuthVi
   assertAssignableInviteRole(viewer.siteRole);
 
   const expiresInDays = clampInviteExpiry(input.expiresInDays ?? 7);
+  const maxUses = clampInviteMaxUses(input.maxUses ?? 1);
   const token = randomBytes(24).toString("base64url");
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString();
 
   const insertPayload: AppSchema["invite_tokens"]["Insert"] = {
     email,
+    invite_token: token,
     token_hash: tokenHash,
     site_role: requestedRole,
     expires_at: expiresAt,
+    max_uses: maxUses,
+    use_count: 0,
     created_by: viewer.profileId,
   };
 
@@ -871,7 +875,7 @@ export async function createAdminInvite(input: CreateInviteInput, viewer: AuthVi
     .schema("app")
     .from("invite_tokens")
     .insert(insertPayload)
-    .select("id, email, site_role, expires_at, used_at, created_at")
+    .select("id, email, invite_token, site_role, expires_at, used_at, max_uses, use_count, created_at")
     .single();
 
   if (error) {
@@ -901,6 +905,7 @@ export async function reissueAdminInvite(inviteId: string, viewer: AuthViewer) {
     {
       email: invite.email,
       siteRole: normalizeEditableSiteRole(invite.site_role),
+      maxUses: invite.max_uses,
       expiresInDays: Math.max(
         1,
         Math.ceil((new Date(invite.expires_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000)),
@@ -1482,7 +1487,7 @@ async function listInvites(client: AppClient) {
   const { data, error } = await client
     .schema("app")
     .from("invite_tokens")
-    .select("id, email, site_role, expires_at, used_at, created_at")
+    .select("id, email, invite_token, site_role, expires_at, used_at, max_uses, use_count, created_at")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -1927,7 +1932,7 @@ async function getInviteById(client: AppClient, inviteId: string) {
   const { data, error } = await client
     .schema("app")
     .from("invite_tokens")
-    .select("id, email, site_role, expires_at, used_at, created_at")
+    .select("id, email, invite_token, site_role, expires_at, used_at, max_uses, use_count, created_at")
     .eq("id", inviteId)
     .maybeSingle();
 
@@ -2392,13 +2397,32 @@ function mapProfileRow(row: ProfileRow): AdminProfileRecord {
   };
 }
 
-function mapInviteRow(row: Pick<InviteRow, "id" | "email" | "site_role" | "expires_at" | "used_at" | "created_at">): AdminInviteRecord {
+function mapInviteRow(
+  row: Pick<
+    InviteRow,
+    | "id"
+    | "email"
+    | "invite_token"
+    | "site_role"
+    | "expires_at"
+    | "used_at"
+    | "max_uses"
+    | "use_count"
+    | "created_at"
+  >,
+): AdminInviteRecord {
+  const maxUses = Math.max(1, row.max_uses ?? 1);
+  const useCount = Math.min(maxUses, Math.max(0, row.use_count ?? (row.used_at ? 1 : 0)));
+
   return {
     id: row.id,
     email: row.email,
     siteRole: row.site_role,
     expiresAt: row.expires_at,
     usedAt: row.used_at,
+    inviteToken: row.invite_token,
+    maxUses,
+    useCount,
     createdAt: row.created_at,
   };
 }
@@ -2866,6 +2890,14 @@ function clampInviteExpiry(expiresInDays: number) {
   }
 
   return Math.min(Math.max(Math.round(expiresInDays), 1), 30);
+}
+
+function clampInviteMaxUses(maxUses: number) {
+  if (!Number.isFinite(maxUses)) {
+    return 1;
+  }
+
+  return Math.min(Math.max(Math.round(maxUses), 1), 999);
 }
 
 function assertAssignableInviteRole(actorRole: AuthViewer["siteRole"]) {

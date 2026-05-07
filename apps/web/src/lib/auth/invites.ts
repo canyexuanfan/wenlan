@@ -11,6 +11,8 @@ export type InviteLookupResult =
       email: string | null;
       siteRole: SiteRole;
       expiresAt: string;
+      maxUses: number;
+      useCount: number;
     }
   | {
       isValid: false;
@@ -35,7 +37,7 @@ export async function getInviteByToken(token: string): Promise<InviteLookupResul
   const { data, error } = await client
     .schema("app")
     .from("invite_tokens")
-    .select("id, email, site_role, expires_at, used_at")
+    .select("id, email, site_role, expires_at, used_at, max_uses, use_count")
     .eq("token_hash", hashInviteToken(normalizedToken))
     .maybeSingle();
 
@@ -50,10 +52,13 @@ export async function getInviteByToken(token: string): Promise<InviteLookupResul
     };
   }
 
-  if (data.used_at) {
+  const maxUses = Math.max(1, data.max_uses ?? 1);
+  const useCount = Math.min(maxUses, Math.max(0, data.use_count ?? (data.used_at ? 1 : 0)));
+
+  if (useCount >= maxUses) {
     return {
       isValid: false,
-      error: "This invite link has already been used.",
+      error: "This invite link has reached its use limit.",
     };
   }
 
@@ -69,5 +74,7 @@ export async function getInviteByToken(token: string): Promise<InviteLookupResul
     email: data.email,
     siteRole: data.site_role,
     expiresAt: data.expires_at,
+    maxUses,
+    useCount,
   };
 }
