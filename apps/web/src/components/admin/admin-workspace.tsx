@@ -104,6 +104,34 @@ type VisibleInviteSecret = {
   useCount: number;
 };
 
+function IconEye() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </svg>
+  );
+}
+
+function IconTicket() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v2.1a2.4 2.4 0 0 0 0 4.8v2.1a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-2.1a2.4 2.4 0 0 0 0-4.8V7.5Z" />
+      <path d="M10 7.2v9.6" />
+    </svg>
+  );
+}
+
+function IconLink() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M9.5 14.5 14.5 9.5" />
+      <path d="M8.2 10.8 6.9 12.1a3.4 3.4 0 0 0 4.8 4.8l1.3-1.3" />
+      <path d="M15.8 13.2 17.1 11.9a3.4 3.4 0 0 0-4.8-4.8L11 8.4" />
+    </svg>
+  );
+}
+
 export function AdminWorkspace({
   mode = "content",
   initialWorkspace = null,
@@ -2652,7 +2680,7 @@ export function AdminWorkspace({
                 <p className="mini-caption">
                   无需先填邮箱。生成后会优先复制注册链接，同时返回邀请码，拿到任一方式都能完成注册。
                 </p>
-                <div className="field-grid">
+                <div className="field-grid invite-create-grid">
                   <label>
                     角色
                     <select
@@ -2772,7 +2800,7 @@ export function AdminWorkspace({
                               onClick={() => handleInviteSecretView(invite)}
                               disabled={!canManageMembers}
                             >
-                              <span aria-hidden="true">看</span>
+                              <IconEye />
                             </button>
                             <button
                               type="button"
@@ -2787,7 +2815,7 @@ export function AdminWorkspace({
                               }
                               disabled={!canManageMembers}
                             >
-                              <span aria-hidden="true">码</span>
+                              <IconTicket />
                             </button>
                             <button
                               type="button"
@@ -2802,7 +2830,7 @@ export function AdminWorkspace({
                               }
                               disabled={!canManageMembers}
                             >
-                              <span aria-hidden="true">链</span>
+                              <IconLink />
                             </button>
                             <button
                               type="button"
