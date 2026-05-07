@@ -958,6 +958,14 @@ export function AdminWorkspace({
     setStatusMessage("旧邀请码只保存加密校验值，无法反查明文。请点“重新生成”后再复制。");
   }
 
+  function getInviteTargetLabel(invite: AdminInviteRecord) {
+    if (invite.email) {
+      return invite.email;
+    }
+
+    return invite.usedAt ? "开放邀请已使用" : "开放邀请";
+  }
+
   function canEditMemberRole() {
     return canManageMembers;
   }
@@ -2674,11 +2682,12 @@ export function AdminWorkspace({
                 </div>
                 {invites.map((invite) => {
                   const inviteSecret = visibleInviteSecrets[invite.id] ?? null;
+                  const inviteTargetLabel = getInviteTargetLabel(invite);
 
                   return (
                     <div key={invite.id} className="list-row access-list-row">
                       <div>
-                        <strong>{invite.email ?? "未绑定邮箱"}</strong>
+                        <strong>{inviteTargetLabel}</strong>
                         <p>创建于 {formatDate(invite.createdAt.slice(0, 10))}</p>
                       </div>
                       <span>{getSiteRoleLabel(invite.siteRole)}</span>
@@ -2687,7 +2696,7 @@ export function AdminWorkspace({
                       <div
                         className="resource-row-actions"
                         role="group"
-                        aria-label={`邀请操作：${invite.email ?? "开放邀请"}`}
+                        aria-label={`邀请操作：${inviteTargetLabel}`}
                       >
                         {invite.usedAt ? (
                           <span className="table-action-muted">已完成</span>
@@ -2696,7 +2705,7 @@ export function AdminWorkspace({
                             <button
                               type="button"
                               className="resource-edit-button row-edit-button"
-                              aria-label={`复制邀请码：${invite.email ?? "开放邀请"}`}
+                              aria-label={`复制邀请码：${inviteTargetLabel}`}
                               data-tooltip={inviteSecret ? "复制邀请码" : "需重新生成"}
                               title={inviteSecret ? "复制邀请码" : "旧邀请码无法反查，请重新生成"}
                               onClick={() =>
@@ -2711,7 +2720,7 @@ export function AdminWorkspace({
                             <button
                               type="button"
                               className="resource-edit-button row-edit-button"
-                              aria-label={`复制注册链接：${invite.email ?? "开放邀请"}`}
+                              aria-label={`复制注册链接：${inviteTargetLabel}`}
                               data-tooltip={inviteSecret ? "复制链接" : "需重新生成"}
                               title={inviteSecret ? "复制注册链接" : "旧链接无法反查，请重新生成"}
                               onClick={() =>
@@ -2726,7 +2735,7 @@ export function AdminWorkspace({
                             <button
                               type="button"
                               className="resource-edit-button row-edit-button"
-                              aria-label={`重新生成邀请：${invite.email ?? "开放邀请"}`}
+                              aria-label={`重新生成邀请：${inviteTargetLabel}`}
                               data-tooltip="重新生成"
                               title="重新生成"
                               onClick={() => handleInviteReissue(invite.id)}
@@ -2737,7 +2746,7 @@ export function AdminWorkspace({
                             <button
                               type="button"
                               className="resource-edit-button row-edit-button"
-                              aria-label={`作废邀请：${invite.email ?? "开放邀请"}`}
+                              aria-label={`作废邀请：${inviteTargetLabel}`}
                               data-tooltip="作废邀请"
                               title="作废邀请"
                               onClick={() => handleInviteDelete(invite.id)}
