@@ -14,6 +14,7 @@ export async function SiteFrame({
   searchValue = "",
   activeTag = "",
   hideAdminLink = false,
+  hideFooter = false,
   viewer,
 }: Readonly<{
   children: React.ReactNode;
@@ -22,6 +23,7 @@ export async function SiteFrame({
   searchValue?: string;
   activeTag?: string;
   hideAdminLink?: boolean;
+  hideFooter?: boolean;
   viewer?: AuthViewer;
 }>) {
   const resolvedViewer = viewer ?? (await getAuthViewer());
@@ -103,10 +105,12 @@ export async function SiteFrame({
 
       <main id="main-content">{children}</main>
 
+      {hideFooter ? null : (
       <footer className="site-footer">
         <p>文览 · 在线内容库</p>
         <p className="footer-note">SOP、指南、案例、报告，统一在线管理与阅读。</p>
       </footer>
+      )}
     </div>
   );
 }

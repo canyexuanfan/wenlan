@@ -40,3 +40,12 @@ apps/web/.migration-backups/
 
 # Local archives and deployment bundles
 wenlan-web-deploy*.tar.gz
+
+# 根目录临时产物（飞书迁移脚本 / 测试截图 / 临时数据，可能含 token 与用户数据，禁止入库）
+/*.json
+/*.ps1
+/*.png
+/*.xml
+/.codex-logs/
+/apps/web/.codex-logs/
+

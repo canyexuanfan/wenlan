@@ -79,6 +79,12 @@ export function DocumentPageView({
                 <Link href={toHref(folder.routePath)} className="hero-button">
                   返回栏目
                 </Link>
+                <Link
+                  href={`/kb?scopeType=document&routePath=${encodeURIComponent(document.routePath)}`}
+                  className="hero-button hero-button-strong"
+                >
+                  知识库问答
+                </Link>
               </div>
             </aside>
           </div>
@@ -151,6 +157,12 @@ export function DocumentPageView({
               </a>
               <Link href={toHref(folder.routePath)} className="hero-button">
                 返回栏目
+              </Link>
+              <Link
+                href={`/kb?scopeType=document&routePath=${encodeURIComponent(document.routePath)}`}
+                className="hero-button hero-button-strong"
+              >
+                知识库问答
               </Link>
             </div>
           </aside>

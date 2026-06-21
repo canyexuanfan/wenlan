@@ -83,6 +83,15 @@ export function FolderPageView({
                 <strong>{accessLabelMap[folder.accessMode]}</strong>
               </div>
             </div>
+
+            <div className="document-actions">
+              <Link
+                href={`/kb?scopeType=folder&routePath=${encodeURIComponent(folder.routePath)}`}
+                className="hero-button hero-button-strong"
+              >
+                知识库问答
+              </Link>
+            </div>
           </aside>
         </div>
       </section>

@@ -369,8 +369,9 @@ async function canViewerAccessResolvedTarget(
 function isDiscoverableAccessMode(
   mode: EffectiveContentAccessMode,
   viewer: ContentViewer,
+  options: { allowShareItems?: boolean } = {},
 ) {
-  return viewerCanManageAdmin(viewer.siteRole) || mode !== "share";
+  return viewerCanManageAdmin(viewer.siteRole) || mode !== "share" || Boolean(options.allowShareItems);
 }
 
 async function canViewerAccessFolder(
@@ -407,16 +408,23 @@ async function canViewerAccessDocument(
   return canViewerAccessResolvedTarget(viewer, await resolveDocumentAccess(document));
 }
 
-async function filterReadableFolders(rows: FolderRow[], viewer: ContentViewer) {
+async function filterReadableFolders(
+  rows: FolderRow[],
+  viewer: ContentViewer,
+  options: { allowShareItems?: boolean } = {},
+) {
   const visibility = await Promise.all(
     rows.map(async (row) => {
       const resolvedAccess = getDirectFolderAccess(row) ?? (await resolveFolderAccess(row));
+      const allowInheritedShareItem = options.allowShareItems && row.access_mode === "inherit";
 
       return {
         row,
         isReadable:
           (await canViewerAccessResolvedTarget(viewer, resolvedAccess)) &&
-          isDiscoverableAccessMode(resolvedAccess.effectiveAccessMode, viewer),
+          isDiscoverableAccessMode(resolvedAccess.effectiveAccessMode, viewer, {
+            allowShareItems: allowInheritedShareItem,
+          }),
       };
     }),
   );
@@ -427,16 +435,20 @@ async function filterReadableFolders(rows: FolderRow[], viewer: ContentViewer) {
 async function filterReadableDocuments<T extends Pick<DocumentRow, "id" | "folder_id" | "access_mode">>(
   rows: T[],
   viewer: ContentViewer,
+  options: { allowShareItems?: boolean } = {},
 ) {
   const visibility = await Promise.all(
     rows.map(async (row) => {
       const resolvedAccess = getDirectDocumentAccess(row) ?? (await resolveDocumentAccess(row));
+      const allowInheritedShareItem = options.allowShareItems && row.access_mode === "inherit";
 
       return {
         row,
         isReadable:
           (await canViewerAccessResolvedTarget(viewer, resolvedAccess)) &&
-          isDiscoverableAccessMode(resolvedAccess.effectiveAccessMode, viewer),
+          isDiscoverableAccessMode(resolvedAccess.effectiveAccessMode, viewer, {
+            allowShareItems: allowInheritedShareItem,
+          }),
       };
     }),
   );
@@ -649,6 +661,7 @@ async function listPublicFoldersByParent(
   _client: AppClient,
   viewer: ContentViewer,
   parentId: string | null,
+  options: { allowShareItems?: boolean } = {},
 ) {
   const adminClient = createSupabaseAdminClient();
   const query = adminClient
@@ -668,7 +681,7 @@ async function listPublicFoldersByParent(
     throw error;
   }
 
-  const readableFolders = await filterReadableFolders(data, viewer);
+  const readableFolders = await filterReadableFolders(data, viewer, options);
   const resolvedFolderAccess = await Promise.all(
     readableFolders.map(
       async (row) => [row.id, getDirectFolderAccess(row) ?? (await resolveFolderAccess(row))] as const,
@@ -687,6 +700,7 @@ async function listPublicDocuments(
     featuredOnly?: boolean;
     excludeDocumentId?: string;
     limit?: number;
+    allowShareItems?: boolean;
   },
 ) {
   const adminClient = createSupabaseAdminClient();
@@ -727,7 +741,9 @@ async function listPublicDocuments(
     throw error;
   }
 
-  const readableDocuments = await filterReadableDocuments(data, viewer);
+  const readableDocuments = await filterReadableDocuments(data, viewer, {
+    allowShareItems: options?.allowShareItems,
+  });
   const resolvedDocumentAccess = await Promise.all(
     readableDocuments.map(
       async (row) => [row.id, getDirectDocumentAccess(row) ?? (await resolveDocumentAccess(row))] as const,
@@ -1177,16 +1193,17 @@ async function getSupabaseFolderPageData(
   viewer: ContentViewer,
   folderRow: FolderRow,
 ): Promise<FolderPageData> {
-  const folderAccessPromise = resolveFolderAccess(folderRow);
+  const folderAccess = await resolveFolderAccess(folderRow);
+  const allowShareItems = folderAccess.effectiveAccessMode === "share";
   const [siteSettings, navigationFolders, breadcrumbs, childFolders, childDocuments] =
     await Promise.all([
       getSupabaseSiteSettings(),
       listPublicFoldersByParent(client, viewer, null),
       getFolderTrailByRoutePath(folderRow.route_path),
-      listPublicFoldersByParent(client, viewer, folderRow.id),
-      listPublicDocuments(client, viewer, { folderId: folderRow.id }),
+      listPublicFoldersByParent(client, viewer, folderRow.id, { allowShareItems }),
+      listPublicDocuments(client, viewer, { folderId: folderRow.id, allowShareItems }),
     ]);
-  const folder = mapFolderRow(folderRow, await folderAccessPromise);
+  const folder = mapFolderRow(folderRow, folderAccess);
 
   return {
     siteSettings,
@@ -1225,9 +1242,11 @@ async function getSupabaseDocumentPageData(
   const folderAccessPromise = folderRow
     ? resolveFolderAccess(folderRow)
     : Promise.resolve(rootDocumentAccess);
+  const folderAccess = await folderAccessPromise;
+  const allowShareItems = folderAccess.effectiveAccessMode === "share";
   const documentAccessPromise = getDirectDocumentAccess(documentRow)
     ? Promise.resolve(getDirectDocumentAccess(documentRow)!)
-    : folderAccessPromise;
+    : Promise.resolve(folderAccess);
   const [siteSettings, navigationFolders, folderTrail, outline, relatedDocuments, tagMap] =
     await Promise.all([
       getSupabaseSiteSettings(),
@@ -1238,14 +1257,12 @@ async function getSupabaseDocumentPageData(
         folderId: folderRow?.id ?? null,
         excludeDocumentId: documentRow.id,
         limit: 3,
+        allowShareItems,
       }),
       getTagMap(documentRow.id),
     ]);
 
-  const [folderAccess, documentAccess] = await Promise.all([
-    folderAccessPromise,
-    documentAccessPromise,
-  ]);
+  const documentAccess = await documentAccessPromise;
   const folder = folderRow ? mapFolderRow(folderRow, folderAccess) : buildRootFolderRecord();
   const document = mapDocumentRow(
     documentRow,
