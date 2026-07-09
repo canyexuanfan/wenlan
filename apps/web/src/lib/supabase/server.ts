@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 
 import type { Database } from "@/types/database";
 
@@ -27,4 +28,42 @@ export async function createSupabaseServerClient() {
       },
     },
   });
+}
+
+export async function createSupabaseRouteHandlerClient() {
+  assertSupabaseConfigured();
+
+  const cookieStore = await cookies();
+  const pendingCookies: Array<{
+    name: string;
+    value: string;
+    options?: Parameters<typeof cookieStore.set>[2];
+  }> = [];
+
+  const client = createServerClient<Database>(supabaseEnv.serverUrl, supabaseEnv.anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          cookieStore.set(name, value, options);
+          pendingCookies.push({ name, value, options });
+        });
+      },
+    },
+  });
+
+  function applyCookies<T extends NextResponse>(response: T) {
+    pendingCookies.forEach(({ name, value, options }) => {
+      response.cookies.set(name, value, options);
+    });
+
+    return response;
+  }
+
+  return {
+    client,
+    applyCookies,
+  };
 }

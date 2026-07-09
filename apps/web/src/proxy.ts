@@ -1,10 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import {
+  AUTH_REFRESH_COOKIE,
+  AUTH_REFRESH_INTERVAL_MS,
+  AUTH_REFRESH_TIMEOUT_MS,
+} from "@/lib/auth/constants";
 import type { Database } from "@/types/database";
-
-const AUTH_REFRESH_COOKIE = "wenlan-auth-refresh-at";
-const AUTH_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 function hasSupabaseAuthCookie(request: NextRequest) {
   return request.cookies
@@ -37,6 +39,24 @@ function shouldRefreshAuth(request: NextRequest) {
   }
 
   return Date.now() - refreshedAt >= AUTH_REFRESH_INTERVAL_MS;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 }
 
 export async function proxy(request: NextRequest) {
@@ -86,10 +106,18 @@ export async function proxy(request: NextRequest) {
     },
   );
 
+  let authResult: Awaited<ReturnType<typeof supabase.auth.getUser>>;
+
+  try {
+    authResult = await withTimeout(supabase.auth.getUser(), AUTH_REFRESH_TIMEOUT_MS);
+  } catch {
+    return response;
+  }
+
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = authResult;
 
   if (error || !user) {
     clearAuthCookies(request, response);

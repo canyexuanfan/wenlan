@@ -38,7 +38,7 @@ export async function POST(request: Request) {
         | "private"
         | "specific_users"
         | "group",
-      renderMode: String(formData.get("renderMode") ?? "site") as "site" | "source",
+      renderMode: "site",
       htmlFile: documentFile,
       assetFiles: assetFiles.map((file, index) => ({
         file,

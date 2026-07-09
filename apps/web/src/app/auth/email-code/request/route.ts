@@ -42,6 +42,46 @@ function buildSameHostUrl(request: Request, path: string) {
   return new URL(path, `${protocol}://${host}`);
 }
 
+function isJsonRequest(request: Request) {
+  const accept = request.headers.get("accept") ?? "";
+  return (
+    request.headers.get("x-login-email-code-request") === "fetch" || accept.includes("application/json")
+  );
+}
+
+function buildEmailCodeResponse(
+  request: Request,
+  input: {
+    email?: string | null;
+    redirectTo?: string | null;
+    error?: string | null;
+    notice?: string | null;
+    status?: number;
+  },
+) {
+  if (isJsonRequest(request)) {
+    return NextResponse.json(
+      {
+        error: input.error ?? null,
+        notice: input.notice ?? null,
+      },
+      { status: input.status ?? (input.error ? 400 : 200) },
+    );
+  }
+
+  return NextResponse.redirect(
+    buildSameHostUrl(
+      request,
+      buildEmailCodeHref({
+        email: input.email,
+        redirectTo: input.redirectTo,
+        error: input.error,
+        notice: input.notice,
+      }),
+    ),
+  );
+}
+
 function normalizeEmail(input: string) {
   return input.trim().toLowerCase();
 }
@@ -71,29 +111,21 @@ export async function POST(request: Request) {
   const redirectTo = normalizeRedirectPath(String(formData.get("redirectTo") ?? "/"));
 
   if (!isSupabaseConfigured()) {
-    return NextResponse.redirect(
-      buildSameHostUrl(
-        request,
-        buildEmailCodeHref({
-          email,
-          redirectTo,
-          error: "当前登录服务暂不可用，请稍后再试。",
-        }),
-      ),
-    );
+    return buildEmailCodeResponse(request, {
+      email,
+      redirectTo,
+      error: "当前登录服务暂不可用，请稍后再试。",
+      status: 503,
+    });
   }
 
   if (!isEmail(email)) {
-    return NextResponse.redirect(
-      buildSameHostUrl(
-        request,
-        buildEmailCodeHref({
-          email,
-          redirectTo,
-          error: "请输入有效的邮箱地址。",
-        }),
-      ),
-    );
+    return buildEmailCodeResponse(request, {
+      email,
+      redirectTo,
+      error: "请输入有效的邮箱地址。",
+      status: 400,
+    });
   }
 
   const client = await createSupabaseServerClient();
@@ -105,26 +137,17 @@ export async function POST(request: Request) {
   });
 
   if (error) {
-    return NextResponse.redirect(
-      buildSameHostUrl(
-        request,
-        buildEmailCodeHref({
-          email,
-          redirectTo,
-          error: translateEmailCodeError(error.message),
-        }),
-      ),
-    );
+    return buildEmailCodeResponse(request, {
+      email,
+      redirectTo,
+      error: translateEmailCodeError(error.message),
+      status: 400,
+    });
   }
 
-  return NextResponse.redirect(
-    buildSameHostUrl(
-      request,
-      buildEmailCodeHref({
-        email,
-        redirectTo,
-        notice: "验证码已发送，请查收邮箱。",
-      }),
-    ),
-  );
+  return buildEmailCodeResponse(request, {
+    email,
+    redirectTo,
+    notice: "验证码已发送，请查收邮箱。",
+  });
 }

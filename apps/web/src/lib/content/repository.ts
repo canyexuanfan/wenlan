@@ -206,9 +206,17 @@ function getDirectFolderAccess(
   return {
     effectiveAccessMode: folder.access_mode,
     grantTargetType:
-      folder.access_mode === "specific_users" || folder.access_mode === "group" ? "folder" : null,
+      folder.access_mode === "specific_users" ||
+      folder.access_mode === "group" ||
+      folder.access_mode === "share"
+        ? "folder"
+        : null,
     grantTargetId:
-      folder.access_mode === "specific_users" || folder.access_mode === "group" ? folder.id : null,
+      folder.access_mode === "specific_users" ||
+      folder.access_mode === "group" ||
+      folder.access_mode === "share"
+        ? folder.id
+        : null,
   };
 }
 
@@ -222,11 +230,15 @@ function getDirectDocumentAccess(
   return {
     effectiveAccessMode: document.access_mode,
     grantTargetType:
-      document.access_mode === "specific_users" || document.access_mode === "group"
+      document.access_mode === "specific_users" ||
+      document.access_mode === "group" ||
+      document.access_mode === "share"
         ? "document"
         : null,
     grantTargetId:
-      document.access_mode === "specific_users" || document.access_mode === "group"
+      document.access_mode === "specific_users" ||
+      document.access_mode === "group" ||
+      document.access_mode === "share"
         ? document.id
         : null,
   };
@@ -374,6 +386,33 @@ function isDiscoverableAccessMode(
   return viewerCanManageAdmin(viewer.siteRole) || mode !== "share" || Boolean(options.allowShareItems);
 }
 
+async function canViewerDiscoverResolvedTarget(
+  viewer: ContentViewer,
+  resolvedAccess: ResolvedContentAccess,
+  options: { allowShareItems?: boolean } = {},
+) {
+  if (isDiscoverableAccessMode(resolvedAccess.effectiveAccessMode, viewer, options)) {
+    return true;
+  }
+
+  if (!viewer.isAuthenticated || !resolvedAccess.grantTargetType || !resolvedAccess.grantTargetId) {
+    return false;
+  }
+
+  const grants = await getTargetAccessGrants(
+    resolvedAccess.grantTargetType,
+    resolvedAccess.grantTargetId,
+  );
+
+  return grants.some((grant) => {
+    if (grant.subject_type === "user") {
+      return grant.subject_id === viewer.profileId;
+    }
+
+    return viewer.groupIds.includes(grant.subject_id);
+  });
+}
+
 async function canViewerAccessFolder(
   viewer: ContentViewer,
   folder: Pick<FolderRow, "id" | "parent_id" | "access_mode">,
@@ -416,15 +455,17 @@ async function filterReadableFolders(
   const visibility = await Promise.all(
     rows.map(async (row) => {
       const resolvedAccess = getDirectFolderAccess(row) ?? (await resolveFolderAccess(row));
-      const allowInheritedShareItem = options.allowShareItems && row.access_mode === "inherit";
+      const allowShareItem =
+        options.allowShareItems &&
+        (row.access_mode === "inherit" || row.access_mode === "share");
 
       return {
         row,
         isReadable:
           (await canViewerAccessResolvedTarget(viewer, resolvedAccess)) &&
-          isDiscoverableAccessMode(resolvedAccess.effectiveAccessMode, viewer, {
-            allowShareItems: allowInheritedShareItem,
-          }),
+          (await canViewerDiscoverResolvedTarget(viewer, resolvedAccess, {
+            allowShareItems: allowShareItem,
+          })),
       };
     }),
   );
@@ -440,15 +481,17 @@ async function filterReadableDocuments<T extends Pick<DocumentRow, "id" | "folde
   const visibility = await Promise.all(
     rows.map(async (row) => {
       const resolvedAccess = getDirectDocumentAccess(row) ?? (await resolveDocumentAccess(row));
-      const allowInheritedShareItem = options.allowShareItems && row.access_mode === "inherit";
+      const allowShareItem =
+        options.allowShareItems &&
+        (row.access_mode === "inherit" || row.access_mode === "share");
 
       return {
         row,
         isReadable:
           (await canViewerAccessResolvedTarget(viewer, resolvedAccess)) &&
-          isDiscoverableAccessMode(resolvedAccess.effectiveAccessMode, viewer, {
-            allowShareItems: allowInheritedShareItem,
-          }),
+          (await canViewerDiscoverResolvedTarget(viewer, resolvedAccess, {
+            allowShareItems: allowShareItem,
+          })),
       };
     }),
   );
@@ -501,8 +544,10 @@ function normalizeAccessMode(mode: Database["app"]["Enums"]["access_mode"]) {
   }
 }
 
-function normalizeDocumentRenderMode(value: string | null | undefined) {
-  return value === "source" ? "source" : "site";
+function normalizeDocumentRenderMode(
+  value: string | null | undefined,
+): Database["app"]["Tables"]["documents"]["Row"]["render_mode"] {
+  return "site";
 }
 
 function mapFolderRow(

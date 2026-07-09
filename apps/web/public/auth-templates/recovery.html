@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wenlan Password Reset Code</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6efe4;
+        --panel: #fffaf4;
+        --panel-strong: #fff4e5;
+        --text: #3c2a1f;
+        --muted: #7a6758;
+        --accent: #c96b32;
+        --accent-deep: #a95624;
+        --line: rgba(201, 107, 50, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0) 38%),
+          linear-gradient(180deg, #f9f2e9 0%, var(--bg) 100%);
+        color: var(--text);
+      }
+
+      .shell {
+        width: 100%;
+        padding: 40px 18px;
+      }
+
+      .card {
+        max-width: 640px;
+        margin: 0 auto;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        padding: 36px 32px;
+        box-shadow: 0 22px 52px rgba(121, 73, 40, 0.12);
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .brand-mark {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #e68d54, #b9551f);
+        box-shadow: 0 0 0 6px rgba(201, 107, 50, 0.12);
+      }
+
+      h1 {
+        margin: 18px 0 10px;
+        font-size: 30px;
+        line-height: 1.2;
+      }
+
+      p {
+        margin: 0;
+        line-height: 1.75;
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      .code-panel {
+        margin: 26px 0 18px;
+        padding: 22px;
+        border-radius: 24px;
+        background: var(--panel-strong);
+        border: 1px solid rgba(201, 107, 50, 0.24);
+      }
+
+      .code-label {
+        font-size: 13px;
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .code {
+        margin-top: 10px;
+        font-size: 40px;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: 0.18em;
+        color: var(--accent-deep);
+      }
+
+      .action {
+        margin: 24px 0 0;
+      }
+
+      .button {
+        display: inline-block;
+        padding: 14px 22px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #fff8f2;
+        text-decoration: none;
+        font-weight: 700;
+      }
+
+      .tips {
+        margin-top: 24px;
+        padding-top: 18px;
+        border-top: 1px dashed var(--line);
+        font-size: 14px;
+      }
+
+      .footer {
+        margin-top: 28px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      @media (max-width: 640px) {
+        .shell {
+          padding: 20px 10px;
+        }
+
+        .card {
+          padding: 28px 20px;
+          border-radius: 22px;
+        }
+
+        .code {
+          font-size: 32px;
+          letter-spacing: 0.12em;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="card">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <span>Wenlan</span>
+        </div>
+        <h1>重置密码验证码</h1>
+        <p>你正在重置 Wenlan 账号密码。请输入下面的验证码继续操作。</p>
+
+        <div class="code-panel">
+          <div class="code-label">Verification Code</div>
+          <div class="code">{{ .Token }}</div>
+        </div>
+
+        <p>如果你正在当前设备上继续重置密码，也可以直接点击下面的按钮。</p>
+        <div class="action">
+          <a class="button" href="{{ .ConfirmationURL }}">继续重置 Wenlan 密码</a>
+        </div>
+
+        <div class="tips">
+          <p>如果这不是你的操作，请忽略这封邮件并尽快检查账号安全。</p>
+        </div>
+
+        <div class="footer">
+          <p>Wenlan Account Mailer</p>
+          <p>{{ .SiteURL }}</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

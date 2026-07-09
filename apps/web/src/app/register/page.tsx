@@ -4,18 +4,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AuthFrame } from "@/components/public/auth-frame";
+import { RegisterForm } from "@/components/public/register-form";
 import { getInviteByToken } from "@/lib/auth/invites";
 import { getAuthViewer } from "@/lib/auth/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export const metadata: Metadata = {
   title: "注册",
-  description: "通过邀请链接注册账号。",
+  description: "通过邀请链接创建文澜账号。",
 };
 
 type RegisterPageProps = {
   searchParams: Promise<{
+    displayName?: string;
+    email?: string;
     error?: string;
+    notice?: string;
     token?: string;
   }>;
 };
@@ -24,13 +28,20 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
   const viewer = await getAuthViewer();
   const resolvedSearchParams = await searchParams;
   const token = String(resolvedSearchParams.token ?? "").trim();
+  const displayName = resolvedSearchParams.displayName
+    ? decodeURIComponent(resolvedSearchParams.displayName)
+    : "";
+  const email = resolvedSearchParams.email ? decodeURIComponent(resolvedSearchParams.email) : "";
   const error = resolvedSearchParams.error ? decodeURIComponent(resolvedSearchParams.error) : "";
+  const notice = resolvedSearchParams.notice ? decodeURIComponent(resolvedSearchParams.notice) : "";
 
   if (viewer.isAuthenticated) {
     redirect("/");
   }
 
   const invite = isSupabaseConfigured() && token ? await getInviteByToken(token) : null;
+  const validInvite = token && invite?.isValid ? invite : null;
+  const showRegisterForm = Boolean(validInvite);
 
   return (
     <AuthFrame>
@@ -60,9 +71,15 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
             </p>
           ) : null}
 
-          {error ? (
+          {!showRegisterForm && error ? (
             <p className="form-error" role="alert">
               {error}
+            </p>
+          ) : null}
+
+          {!showRegisterForm && notice ? (
+            <p className="form-success" role="status" aria-live="polite">
+              {notice}
             </p>
           ) : null}
 
@@ -89,46 +106,15 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
             </p>
           ) : null}
 
-          {token && invite?.isValid ? (
-            <form action="/auth/register" method="post" className="login-form">
-              <input type="hidden" name="token" value={token} />
-              <label htmlFor="register-email">邮箱</label>
-              <input
-                id="register-email"
-                type="email"
-                name="email"
-                defaultValue={invite.email ?? ""}
-                readOnly={Boolean(invite.email)}
-                placeholder={invite.email ? undefined : "输入你要注册的邮箱"}
-                autoComplete="email"
-                required
-              />
-
-              <label htmlFor="register-display-name">称呼</label>
-              <input
-                id="register-display-name"
-                type="text"
-                name="displayName"
-                placeholder="姓名或常用称呼"
-                autoComplete="name"
-                required
-              />
-
-              <label htmlFor="register-password">密码</label>
-              <input
-                id="register-password"
-                type="password"
-                name="password"
-                placeholder="至少 8 位密码"
-                minLength={8}
-                autoComplete="new-password"
-                required
-              />
-
-              <button type="submit" className="hero-button hero-button-strong login-submit">
-                创建账号
-              </button>
-            </form>
+          {showRegisterForm ? (
+            <RegisterForm
+              token={token}
+              defaultEmail={validInvite?.email ?? email}
+              lockedEmail={Boolean(validInvite?.email)}
+              defaultDisplayName={displayName}
+              initialError={error}
+              initialNotice={notice}
+            />
           ) : null}
 
           <div className="login-register-row">

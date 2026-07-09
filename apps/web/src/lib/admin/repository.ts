@@ -80,6 +80,9 @@ const DEFAULT_DOCUMENT_HTML = `
   <p>Write the first version of this document here. You can paste HTML or start from a simple paragraph.</p>
 </section>
 `.trim();
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const PERMANENT_INVITE_EXPIRES_AT = "9999-12-31T23:59:59.999Z";
+const PERMANENT_INVITE_EXPIRES_AT_MS = Date.parse(PERMANENT_INVITE_EXPIRES_AT);
 
 const markdown = new MarkdownIt({
   html: true,
@@ -165,11 +168,11 @@ export async function getAdminWorkspaceData(
       listDocuments(client),
       getOutlineMap(client),
       getTagMap(client),
-      mode === "all" ? listProfiles(client) : Promise.resolve([]),
+      listProfiles(client),
       mode === "all" ? listInvites(client) : Promise.resolve([]),
-      mode === "all" ? listGroups(client) : Promise.resolve([]),
-      mode === "all" ? listGroupMembers(client) : Promise.resolve([]),
-      mode === "all" ? listAccessGrants(client) : Promise.resolve([]),
+      listGroups(client),
+      listGroupMembers(client),
+      listAccessGrants(client),
     ]);
   const childFolderCounts = new Map<string, number>();
   const childDocumentCounts = new Map<string, number>();
@@ -858,7 +861,10 @@ export async function createAdminInvite(input: CreateInviteInput, viewer: AuthVi
   const maxUses = clampInviteMaxUses(input.maxUses ?? 1);
   const token = randomBytes(24).toString("base64url");
   const tokenHash = createHash("sha256").update(token).digest("hex");
-  const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt =
+    expiresInDays === 0
+      ? PERMANENT_INVITE_EXPIRES_AT
+      : new Date(Date.now() + expiresInDays * DAY_IN_MS).toISOString();
 
   const insertPayload: AppSchema["invite_tokens"]["Insert"] = {
     email,
@@ -906,10 +912,9 @@ export async function reissueAdminInvite(inviteId: string, viewer: AuthViewer) {
       email: invite.email,
       siteRole: normalizeEditableSiteRole(invite.site_role),
       maxUses: invite.max_uses,
-      expiresInDays: Math.max(
-        1,
-        Math.ceil((new Date(invite.expires_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000)),
-      ),
+      expiresInDays: isPermanentInviteExpiry(invite.expires_at)
+        ? 0
+        : Math.max(1, Math.ceil((new Date(invite.expires_at).getTime() - Date.now()) / DAY_IN_MS)),
     },
     viewer,
   );
@@ -991,7 +996,7 @@ export async function updateAdminProfile(input: UpdateProfileInput, viewer: Auth
     .from("profiles")
     .update(updatePayload)
     .eq("id", input.id)
-    .select("id, email, display_name, site_role, status, created_at, updated_at")
+    .select("id, email, display_name, avatar_url, site_role, status, created_at, updated_at")
     .single();
 
   if (error) {
@@ -1473,7 +1478,7 @@ async function listProfiles(client: AppClient) {
   const { data, error } = await client
     .schema("app")
     .from("profiles")
-    .select("id, email, display_name, site_role, status, created_at, updated_at")
+    .select("id, email, display_name, avatar_url, site_role, status, created_at, updated_at")
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -1917,7 +1922,7 @@ async function getProfileById(client: AppClient, profileId: string) {
   const { data, error } = await client
     .schema("app")
     .from("profiles")
-    .select("id, email, display_name, site_role, status, created_at, updated_at")
+    .select("id, email, display_name, avatar_url, site_role, status, created_at, updated_at")
     .eq("id", profileId)
     .maybeSingle();
 
@@ -1951,7 +1956,7 @@ async function listProfilesByIds(client: AppClient, profileIds: string[]) {
   const { data, error } = await client
     .schema("app")
     .from("profiles")
-    .select("id, email, display_name, site_role, status, created_at, updated_at")
+    .select("id, email, display_name, avatar_url, site_role, status, created_at, updated_at")
     .in("id", profileIds);
 
   if (error) {
@@ -2381,8 +2386,10 @@ function mapDocumentRow(
   };
 }
 
-function normalizeDocumentRenderMode(value: string | null | undefined) {
-  return value === "source" ? "source" : "site";
+function normalizeDocumentRenderMode(
+  value: string | null | undefined,
+): Database["app"]["Tables"]["documents"]["Row"]["render_mode"] {
+  return "site";
 }
 
 function mapProfileRow(row: ProfileRow): AdminProfileRecord {
@@ -2889,7 +2896,19 @@ function clampInviteExpiry(expiresInDays: number) {
     return 7;
   }
 
-  return Math.min(Math.max(Math.round(expiresInDays), 1), 30);
+  const rounded = Math.round(expiresInDays);
+
+  if (rounded === 0) {
+    return 0;
+  }
+
+  return Math.max(rounded, 1);
+}
+
+function isPermanentInviteExpiry(expiresAt: string) {
+  const expiresAtMs = Date.parse(expiresAt);
+
+  return Number.isFinite(expiresAtMs) && expiresAtMs >= PERMANENT_INVITE_EXPIRES_AT_MS;
 }
 
 function clampInviteMaxUses(maxUses: number) {

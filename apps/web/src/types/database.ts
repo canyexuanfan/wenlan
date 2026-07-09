@@ -93,6 +93,7 @@ export type Database = {
           id: string;
           email: string | null;
           display_name: string | null;
+          avatar_url: string | null;
           site_role: "owner" | "admin" | "editor" | "publisher" | "viewer";
           status: string;
           created_at: string;
@@ -102,6 +103,7 @@ export type Database = {
           id: string;
           email?: string | null;
           display_name?: string | null;
+          avatar_url?: string | null;
           site_role?: "owner" | "admin" | "editor" | "publisher" | "viewer";
           status?: string;
           created_at?: string;
@@ -110,6 +112,7 @@ export type Database = {
         Update: {
           email?: string | null;
           display_name?: string | null;
+          avatar_url?: string | null;
           site_role?: "owner" | "admin" | "editor" | "publisher" | "viewer";
           status?: string;
           updated_at?: string;
@@ -480,6 +483,84 @@ export type Database = {
           group_id?: string;
           user_id?: string;
           role?: string;
+        };
+      };
+      user_recent_views: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_type: "folder" | "document";
+          target_id: string;
+          route_path: string;
+          title: string;
+          description: string | null;
+          context_title: string | null;
+          visited_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_type: "folder" | "document";
+          target_id: string;
+          route_path: string;
+          title: string;
+          description?: string | null;
+          context_title?: string | null;
+          visited_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          target_type?: "folder" | "document";
+          target_id?: string;
+          route_path?: string;
+          title?: string;
+          description?: string | null;
+          context_title?: string | null;
+          visited_at?: string;
+          updated_at?: string;
+        };
+      };
+      user_favorites: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_type: "folder" | "document";
+          target_id: string;
+          route_path: string;
+          title: string;
+          description: string | null;
+          context_title: string | null;
+          favorited_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_type: "folder" | "document";
+          target_id: string;
+          route_path: string;
+          title: string;
+          description?: string | null;
+          context_title?: string | null;
+          favorited_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          target_type?: "folder" | "document";
+          target_id?: string;
+          route_path?: string;
+          title?: string;
+          description?: string | null;
+          context_title?: string | null;
+          favorited_at?: string;
+          updated_at?: string;
         };
       };
       ai_suggestions: {

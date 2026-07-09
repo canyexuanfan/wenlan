@@ -50,6 +50,8 @@ What it does:
 
 The web app supports password login and email code login. Email codes are sent by Supabase Auth, so the self-hosted Supabase stack must use a real SMTP service before this works in production.
 
+Invite registration now uses the web app's own SMTP sender for registration verification emails. In production, keep the web app's SMTP variables aligned with the same mailbox or a dedicated monitored mailbox.
+
 Required Supabase SMTP values:
 
 - `SMTP_ADMIN_EMAIL`: sender address, usually the same mailbox or a monitored admin mailbox
@@ -58,6 +60,30 @@ Required Supabase SMTP values:
 - `SMTP_USER`: SMTP login account
 - `SMTP_PASS`: SMTP password or app-specific authorization code
 - `SMTP_SENDER_NAME`: sender display name
+
+Required web app SMTP values for invite registration:
+
+- `SMTP_ADMIN_EMAIL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_SENDER_NAME`
+
+Recommended branded auth mail values:
+
+- `GOTRUE_MAILER_SUBJECTS_MAGIC_LINK`: email-code login subject
+- `GOTRUE_MAILER_SUBJECTS_CONFIRMATION`: register email verification subject
+- `GOTRUE_MAILER_SUBJECTS_RECOVERY`: password reset subject
+- `GOTRUE_MAILER_TEMPLATES_MAGIC_LINK`: login email HTML template URL
+- `GOTRUE_MAILER_TEMPLATES_CONFIRMATION`: register email HTML template URL
+- `GOTRUE_MAILER_TEMPLATES_RECOVERY`: password reset email HTML template URL
+
+This repo ships ready-made HTML templates in `apps/web/public/auth-templates/`. After deployment they are available from:
+
+- `/auth-templates/magic-link.html`
+- `/auth-templates/confirmation.html`
+- `/auth-templates/recovery.html`
 
 The email template must include the one-time code token, not only a magic link. In Supabase Auth email templates, include `{{ .Token }}` in the login email body so users can copy the code into the login page.
 

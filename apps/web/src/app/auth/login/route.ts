@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { normalizeRedirectPath } from "@/lib/auth/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseRouteHandlerClient } from "@/lib/supabase/server";
 
 function translateLoginError(message?: string | null) {
   switch (message) {
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
   }
 
   const email = await resolveLoginEmail(normalizedIdentifier);
-  const client = await createSupabaseServerClient();
+  const { client, applyCookies } = await createSupabaseRouteHandlerClient();
   const { error } = await client.auth.signInWithPassword({
     email,
     password,
@@ -96,5 +96,5 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.redirect(buildSameHostUrl(request, redirectTo));
+  return applyCookies(NextResponse.redirect(buildSameHostUrl(request, redirectTo)));
 }

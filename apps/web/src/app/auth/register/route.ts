@@ -4,7 +4,7 @@ import { getInviteByToken, hashInviteToken } from "@/lib/auth/invites";
 import { buildRegisterHref, ensureProfileForUser } from "@/lib/auth/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseRouteHandlerClient } from "@/lib/supabase/server";
 
 function translateRegisterError(message?: string | null) {
   switch (message) {
@@ -12,6 +12,9 @@ function translateRegisterError(message?: string | null) {
       return "这个邮箱已经注册过了。";
     case "Password should be at least 6 characters":
       return "密码长度不足，请重新设置。";
+    case "Token has expired or is invalid":
+    case "Email link is invalid or has expired":
+      return "验证码无效或已过期，请重新获取。";
     default:
       return "注册失败，请稍后再试。";
   }
@@ -25,58 +28,122 @@ function buildSameHostUrl(request: Request, path: string) {
   return new URL(path, `${protocol}://${host}`);
 }
 
+function buildRegisterRedirect(input: {
+  request: Request;
+  token?: string | null;
+  email?: string | null;
+  displayName?: string | null;
+  error?: string | null;
+  notice?: string | null;
+}) {
+  return NextResponse.redirect(
+    buildSameHostUrl(
+      input.request,
+      buildRegisterHref({
+        token: input.token,
+        email: input.email,
+        displayName: input.displayName,
+        error: input.error,
+        notice: input.notice,
+      }),
+    ),
+  );
+}
+
 export async function POST(request: Request) {
   const formData = await request.formData();
   const token = String(formData.get("token") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const displayName = String(formData.get("displayName") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const verificationCode = String(formData.get("verificationCode") ?? "").replace(/\s/g, "").trim();
 
   try {
     if (!isSupabaseConfigured()) {
-      return NextResponse.redirect(
-        buildSameHostUrl(request, buildRegisterHref(token, "当前注册服务暂不可用，请稍后再试。")),
-      );
+      return buildRegisterRedirect({
+        request,
+        token,
+        email,
+        displayName,
+        error: "当前注册服务暂不可用，请稍后再试。",
+      });
     }
 
-    if (!token || !email || !displayName || !password) {
-      return NextResponse.redirect(
-        buildSameHostUrl(request, buildRegisterHref(token, "请完整填写所有必填项。")),
-      );
+    if (!token || !email || !displayName || !password || !verificationCode) {
+      return buildRegisterRedirect({
+        request,
+        token,
+        email,
+        displayName,
+        error: "请完整填写所有必填项。",
+      });
     }
 
     if (password.length < 8) {
-      return NextResponse.redirect(
-        buildSameHostUrl(request, buildRegisterHref(token, "密码至少需要 8 位。")),
-      );
+      return buildRegisterRedirect({
+        request,
+        token,
+        email,
+        displayName,
+        error: "密码至少需要 8 位。",
+      });
     }
 
     const invite = await getInviteByToken(token);
 
     if (!invite.isValid) {
-      return NextResponse.redirect(buildSameHostUrl(request, buildRegisterHref(token, invite.error)));
+      return buildRegisterRedirect({
+        request,
+        token,
+        email,
+        displayName,
+        error: invite.error,
+      });
     }
 
     if (invite.email && invite.email.toLowerCase() !== email) {
-      return NextResponse.redirect(
-        buildSameHostUrl(request, buildRegisterHref(token, "这个邀请仅适用于最初收到邀请的邮箱地址。")),
-      );
+      return buildRegisterRedirect({
+        request,
+        token,
+        email,
+        displayName,
+        error: "这个邀请仅适用于最初收到邀请的邮箱地址。",
+      });
+    }
+
+    const { client, applyCookies } = await createSupabaseRouteHandlerClient();
+    const { data, error } = await client.auth.verifyOtp({
+      email,
+      token: verificationCode,
+      type: "invite",
+    });
+
+    if (error || !data.user) {
+      return buildRegisterRedirect({
+        request,
+        token,
+        email,
+        displayName,
+        error: translateRegisterError(error?.message),
+      });
     }
 
     const adminClient = createSupabaseAdminClient();
-    const { data, error } = await adminClient.auth.admin.createUser({
-      email,
+    const { error: updateUserError } = await adminClient.auth.admin.updateUserById(data.user.id, {
       password,
-      email_confirm: true,
       user_metadata: {
         display_name: displayName,
       },
     });
 
-    if (error || !data.user) {
-      return NextResponse.redirect(
-        buildSameHostUrl(request, buildRegisterHref(token, translateRegisterError(error?.message))),
-      );
+    if (updateUserError) {
+      return buildRegisterRedirect({
+        request,
+        token,
+        email,
+        displayName,
+        error: translateRegisterError(updateUserError.message),
+      });
     }
 
     await ensureProfileForUser(data.user, {
@@ -97,33 +164,23 @@ export async function POST(request: Request) {
       .lt("use_count", invite.maxUses);
 
     if (inviteUpdateError) {
-      return NextResponse.redirect(
-        buildSameHostUrl(request, buildRegisterHref(token, inviteUpdateError.message)),
-      );
-    }
-
-    const client = await createSupabaseServerClient();
-    const { error: signInError } = await client.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (signInError) {
-      return NextResponse.redirect(
-        buildSameHostUrl(request, buildRegisterHref(token, "账号已创建，但自动登录失败，请返回登录页手动登录。")),
-      );
-    }
-
-    return NextResponse.redirect(buildSameHostUrl(request, "/"));
-  } catch (error) {
-    return NextResponse.redirect(
-      buildSameHostUrl(
+      return buildRegisterRedirect({
         request,
-        buildRegisterHref(
-          token,
-          error instanceof Error ? translateRegisterError(error.message) : "注册失败，请稍后再试。",
-        ),
-      ),
-    );
+        token,
+        email,
+        displayName,
+        error: inviteUpdateError.message,
+      });
+    }
+
+    return applyCookies(NextResponse.redirect(buildSameHostUrl(request, "/")));
+  } catch (error) {
+    return buildRegisterRedirect({
+      request,
+      token,
+      email,
+      displayName,
+      error: error instanceof Error ? translateRegisterError(error.message) : "注册失败，请稍后再试。",
+    });
   }
 }

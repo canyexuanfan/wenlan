@@ -14,6 +14,7 @@ import {
 
 import type {
   AdminAccessMode,
+  AdminTargetType,
   AdminDocumentRecord,
   AdminFolderRecord,
   AdminGroupRecord,
@@ -47,6 +48,19 @@ const allSiteRoles: EditableSiteRole[] = editableSiteRoleOptions.map((option) =>
 const MIN_TREE_PANE_WIDTH = 180;
 const MAX_TREE_PANE_WIDTH = 460;
 const RESOURCE_DRAG_MIME = "application/x-wenlan-resource";
+const ROOT_TREE_NODE_ID = "__tree_root__";
+const DEFAULT_INVITE_EXPIRY_DAYS = "7";
+const PERMANENT_INVITE_EXPIRES_AT_MS = Date.parse("9999-12-31T23:59:59.999Z");
+type InviteExpiryPreset = "1" | "7" | "30" | "365" | "0" | "custom";
+const DEFAULT_INVITE_EXPIRY_PRESET: InviteExpiryPreset = "7";
+const inviteExpiryPresetOptions: Array<{ value: InviteExpiryPreset; label: string }> = [
+  { value: "1", label: "1天" },
+  { value: "7", label: "7天" },
+  { value: "30", label: "1个月" },
+  { value: "365", label: "1年" },
+  { value: "0", label: "永久" },
+  { value: "custom", label: "自定义" },
+];
 type CreatePanel = "folder" | "import";
 type DragResource =
   | { type: "folder"; id: string }
@@ -104,6 +118,46 @@ type VisibleInviteSecret = {
   useCount: number;
 };
 
+function parseInviteExpiryDays(value: string) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return Number(DEFAULT_INVITE_EXPIRY_DAYS);
+  }
+
+  const rounded = Math.round(parsed);
+
+  if (rounded === 0) {
+    return 0;
+  }
+
+  return Math.max(rounded, 1);
+}
+
+function parseInviteMaxUses(value: string) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+
+  return Math.max(Math.round(parsed), 1);
+}
+
+function isPermanentInviteExpiry(expiresAt: string) {
+  const expiresAtMs = Date.parse(expiresAt);
+
+  return Number.isFinite(expiresAtMs) && expiresAtMs >= PERMANENT_INVITE_EXPIRES_AT_MS;
+}
+
+function formatInviteExpiry(expiresAt: string) {
+  return isPermanentInviteExpiry(expiresAt) ? "永久" : new Date(expiresAt).toLocaleDateString("zh-CN");
+}
+
+function getInviteExpiryInputValue(preset: InviteExpiryPreset, customDays: string) {
+  return preset === "custom" ? customDays : preset;
+}
+
 function IconEye() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
@@ -128,6 +182,21 @@ function IconLink() {
       <path d="M9.5 14.5 14.5 9.5" />
       <path d="M8.2 10.8 6.9 12.1a3.4 3.4 0 0 0 4.8 4.8l1.3-1.3" />
       <path d="M15.8 13.2 17.1 11.9a3.4 3.4 0 0 0-4.8-4.8L11 8.4" />
+    </svg>
+  );
+}
+
+function IconTreeToggle({ collapsed }: Readonly<{ collapsed: boolean }>) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" focusable="false">
+      <path
+        d={collapsed ? "M6 4.5 10 8 6 11.5" : "M4.5 6 8 10 11.5 6"}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
     </svg>
   );
 }
@@ -159,11 +228,12 @@ export function AdminWorkspace({
   const [newFolderDescription, setNewFolderDescription] = useState("");
   const [importHtmlFile, setImportHtmlFile] = useState<File | null>(null);
   const [importAccessMode, setImportAccessMode] = useState<AdminAccessMode>("inherit");
-  const [importRenderMode, setImportRenderMode] =
-    useState<AdminDocumentRecord["renderMode"]>("site");
+  const importRenderMode: AdminDocumentRecord["renderMode"] = "site";
   const [isImporting, setIsImporting] = useState(false);
   const [inviteRole, setInviteRole] = useState<EditableSiteRole>("viewer");
-  const [inviteExpiryDays, setInviteExpiryDays] = useState("7");
+  const [inviteExpiryPreset, setInviteExpiryPreset] =
+    useState<InviteExpiryPreset>(DEFAULT_INVITE_EXPIRY_PRESET);
+  const [inviteExpiryDays, setInviteExpiryDays] = useState(DEFAULT_INVITE_EXPIRY_DAYS);
   const [inviteMaxUses, setInviteMaxUses] = useState("1");
   const [visibleInviteSecrets, setVisibleInviteSecrets] = useState<
     Record<string, VisibleInviteSecret>
@@ -180,18 +250,22 @@ export function AdminWorkspace({
   const [groupEditDescription, setGroupEditDescription] = useState("");
   const [isGroupMemberEditorOpen, setIsGroupMemberEditorOpen] = useState(false);
   const [groupMemberDraftIds, setGroupMemberDraftIds] = useState<string[]>([]);
+  const [accessGrantUserDraftIds, setAccessGrantUserDraftIds] = useState<string[]>([]);
+  const [accessGrantGroupDraftIds, setAccessGrantGroupDraftIds] = useState<string[]>([]);
   const [folderParentDraftId, setFolderParentDraftId] = useState("__root__");
   const [documentFolderDraftId, setDocumentFolderDraftId] = useState("");
   const [dragResource, setDragResource] = useState<DragResource | null>(null);
   const [dropTargetFolderId, setDropTargetFolderId] = useState("");
   const [folderDropTarget, setFolderDropTarget] = useState<SortDropTarget | null>(null);
   const [documentDropTarget, setDocumentDropTarget] = useState<SortDropTarget | null>(null);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
 
   const folders = useMemo(() => workspace?.folders ?? [], [workspace]);
   const documents = useMemo(() => workspace?.documents ?? [], [workspace]);
   const members = useMemo(() => workspace?.profiles ?? [], [workspace]);
   const invites = useMemo(() => workspace?.invites ?? [], [workspace]);
   const groups = useMemo(() => workspace?.groups ?? [], [workspace]);
+  const grants = useMemo(() => workspace?.grants ?? [], [workspace]);
   const canManageMembers = workspace?.viewer.canManageMembers ?? false;
   const availableInviteRoles = useMemo(() => allSiteRoles, []);
   const latestInviteSecret = latestInviteId ? visibleInviteSecrets[latestInviteId] ?? null : null;
@@ -200,14 +274,27 @@ export function AdminWorkspace({
     () => new Map(folders.map((folder) => [folder.id, folder])),
     [folders],
   );
+  const folderChildrenMap = useMemo(() => {
+    const map = new Map<string | null, AdminFolderRecord[]>();
+
+    for (const folder of folders) {
+      const siblings = map.get(folder.parentId) ?? [];
+      siblings.push(folder);
+      map.set(folder.parentId, siblings);
+    }
+
+    for (const siblings of map.values()) {
+      siblings.sort((left, right) => left.order - right.order);
+    }
+
+    return map;
+  }, [folders]);
 
   const currentFolder = selectedFolderId ? folderMap.get(selectedFolderId) ?? null : null;
   const parentFolder = currentFolder?.parentId ? folderMap.get(currentFolder.parentId) ?? null : null;
   const currentFolderScopeId = currentFolder?.id ?? null;
 
-  const childFolders = folders
-    .filter((folder) => folder.parentId === currentFolderScopeId)
-    .sort((left, right) => left.order - right.order);
+  const childFolders = folderChildrenMap.get(currentFolderScopeId) ?? [];
 
   const childDocuments = documents
     .filter((document) => document.folderId === currentFolderScopeId)
@@ -254,26 +341,6 @@ export function AdminWorkspace({
     memberDetailRole === "admin"
       ? "可进入后台，管理内容、成员和邀请。"
       : "可按文档权限访问公开、登录可见或被授权内容。";
-
-  useEffect(() => {
-    if (!currentFolder) {
-      setFolderDraft(emptyFolderDraft);
-      setFolderParentDraftId("__root__");
-      return;
-    }
-
-    syncFolderDraft(currentFolder);
-  }, [currentFolder]);
-
-  useEffect(() => {
-    if (!previewDocument) {
-      setDocumentDraft(emptyDocumentDraft);
-      setDocumentFolderDraftId("");
-      return;
-    }
-
-    syncDocumentDraft(previewDocument);
-  }, [previewDocument]);
 
   useEffect(() => {
     setProfileRoleDrafts(
@@ -369,6 +436,39 @@ export function AdminWorkspace({
     clearImportSelection();
   }, [mode]);
 
+  useEffect(() => {
+    setCollapsedFolderIds((current) => {
+      const next = new Set<string>();
+
+      for (const folderId of current) {
+        if (folderId === ROOT_TREE_NODE_ID || folderMap.has(folderId)) {
+          next.add(folderId);
+        }
+      }
+
+      return next.size === current.size ? current : next;
+    });
+  }, [folderMap]);
+
+  useEffect(() => {
+    if (!selectedFolderId) {
+      return;
+    }
+
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current);
+      let changed = next.delete(selectedFolderId);
+      let cursor = folderMap.get(selectedFolderId) ?? null;
+
+      while (cursor?.parentId) {
+        changed = next.delete(cursor.parentId) || changed;
+        cursor = folderMap.get(cursor.parentId) ?? null;
+      }
+
+      return changed ? next : current;
+    });
+  }, [selectedFolderId, folderMap]);
+
   function handleSelectFolder(folderId: string) {
     setEditTarget(null);
     setSelectedFolderId(folderId);
@@ -377,7 +477,38 @@ export function AdminWorkspace({
     setSelectedDocumentId(nextDocument?.id ?? "");
   }
 
-  function syncFolderDraft(folder: AdminFolderRecord) {
+  function toggleTreeBranch(folderId: string) {
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+
+      return next;
+    });
+  }
+
+  const syncAccessGrantDrafts = useCallback((targetType: AdminTargetType, targetId: string) => {
+    const targetGrants = grants.filter(
+      (grant) => grant.targetType === targetType && grant.targetId === targetId,
+    );
+
+    setAccessGrantUserDraftIds(
+      targetGrants
+        .filter((grant) => grant.subjectType === "user")
+        .map((grant) => grant.subjectId),
+    );
+    setAccessGrantGroupDraftIds(
+      targetGrants
+        .filter((grant) => grant.subjectType === "group")
+        .map((grant) => grant.subjectId),
+    );
+  }, [grants]);
+
+  const syncFolderDraft = useCallback((folder: AdminFolderRecord) => {
     setFolderDraft({
       name: folder.name,
       description: folder.description,
@@ -386,9 +517,10 @@ export function AdminWorkspace({
       accent: folder.accent,
     });
     setFolderParentDraftId(folder.parentId ?? "__root__");
-  }
+    syncAccessGrantDrafts("folder", folder.id);
+  }, [syncAccessGrantDrafts]);
 
-  function syncDocumentDraft(document: AdminDocumentRecord) {
+  const syncDocumentDraft = useCallback((document: AdminDocumentRecord) => {
     documentDetailCacheRef.current.set(document.id, document);
     setDocumentDraft({
       title: document.title,
@@ -398,7 +530,28 @@ export function AdminWorkspace({
       featured: document.featured,
     });
     setDocumentFolderDraftId(document.folderId ?? "__root__");
-  }
+    syncAccessGrantDrafts("document", document.id);
+  }, [syncAccessGrantDrafts]);
+
+  useEffect(() => {
+    if (!currentFolder) {
+      setFolderDraft(emptyFolderDraft);
+      setFolderParentDraftId("__root__");
+      return;
+    }
+
+    syncFolderDraft(currentFolder);
+  }, [currentFolder, syncFolderDraft]);
+
+  useEffect(() => {
+    if (!previewDocument) {
+      setDocumentDraft(emptyDocumentDraft);
+      setDocumentFolderDraftId("");
+      return;
+    }
+
+    syncDocumentDraft(previewDocument);
+  }, [previewDocument, syncDocumentDraft]);
 
   function openFolderEditor(folder: AdminFolderRecord) {
     syncFolderDraft(folder);
@@ -434,6 +587,8 @@ export function AdminWorkspace({
     setEditTarget(null);
     setEditingFolderId("");
     setEditingDocumentId("");
+    setAccessGrantUserDraftIds([]);
+    setAccessGrantGroupDraftIds([]);
   }
 
   function clampTreePaneWidth(width: number) {
@@ -1051,6 +1206,152 @@ export function AdminWorkspace({
     return items.includes(item) ? items.filter((value) => value !== item) : [...items, item];
   }
 
+  function getAccessGrantDraftPayload(accessMode: AdminAccessMode) {
+    const userIds = [...new Set(accessGrantUserDraftIds)];
+    const groupIds = [...new Set(accessGrantGroupDraftIds)];
+
+    if (accessMode === "specific_users" && userIds.length === 0) {
+      throw new Error("指定用户权限至少需要选择 1 位用户。");
+    }
+
+    if (accessMode === "group" && groupIds.length === 0) {
+      throw new Error("用户组权限至少需要选择 1 个用户组。");
+    }
+
+    if (accessMode === "specific_users") {
+      return { userIds, groupIds: [] };
+    }
+
+    if (accessMode === "group") {
+      return { userIds: [], groupIds };
+    }
+
+    if (accessMode === "share") {
+      return { userIds, groupIds };
+    }
+
+    return { userIds: [], groupIds: [] };
+  }
+
+  async function syncEditorAccessGrants(
+    targetType: AdminTargetType,
+    targetId: string,
+    accessMode: AdminAccessMode,
+  ) {
+    const { userIds, groupIds } = getAccessGrantDraftPayload(accessMode);
+
+    await submitJson("/api/admin/grants", "PATCH", {
+      targetType,
+      targetId,
+      userIds,
+      groupIds,
+    });
+  }
+
+  function renderAccessGrantSection(accessMode: AdminAccessMode) {
+    if (accessMode !== "share" && accessMode !== "specific_users" && accessMode !== "group") {
+      return null;
+    }
+
+    const showUsers = accessMode === "share" || accessMode === "specific_users";
+    const showGroups = accessMode === "share" || accessMode === "group";
+    const description =
+      accessMode === "share"
+        ? "分享链接仍然可以直接访问，这里配置的是哪些登录用户或用户组会在普通界面里长期看到它。"
+        : accessMode === "specific_users"
+          ? "指定用户权限至少需要选择 1 位用户。"
+          : "用户组权限至少需要选择 1 个用户组。";
+
+    return (
+      <section className="access-grant-editor">
+        <div className="access-grant-editor-head">
+          <strong>定向显示与授权</strong>
+          <p className="mini-caption">{description}</p>
+        </div>
+
+        {showUsers ? (
+          <div className="access-grant-section">
+            <div className="access-grant-section-head">
+              <span>用户</span>
+              <span>{accessGrantUserDraftIds.length} 已选</span>
+            </div>
+            {members.length > 0 ? (
+              <div className="access-grant-checklist">
+                {members.map((member) => {
+                  const checked = accessGrantUserDraftIds.includes(member.id);
+
+                  return (
+                    <label
+                      key={member.id}
+                      className={`access-grant-option${checked ? " is-selected" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setAccessGrantUserDraftIds((current) =>
+                            toggleSelection(current, member.id),
+                          )
+                        }
+                      />
+                      <span className="access-grant-option-main">
+                        <strong>{member.displayName}</strong>
+                        <span>{member.email ?? "未填写邮箱"}</span>
+                      </span>
+                      <span className="tag-chip">{formatProfileStatus(member.status)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mini-caption">当前还没有可选用户。</p>
+            )}
+          </div>
+        ) : null}
+
+        {showGroups ? (
+          <div className="access-grant-section">
+            <div className="access-grant-section-head">
+              <span>用户组</span>
+              <span>{accessGrantGroupDraftIds.length} 已选</span>
+            </div>
+            {groups.length > 0 ? (
+              <div className="access-grant-checklist">
+                {groups.map((group) => {
+                  const checked = accessGrantGroupDraftIds.includes(group.id);
+
+                  return (
+                    <label
+                      key={group.id}
+                      className={`access-grant-option${checked ? " is-selected" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setAccessGrantGroupDraftIds((current) =>
+                            toggleSelection(current, group.id),
+                          )
+                        }
+                      />
+                      <span className="access-grant-option-main">
+                        <strong>{group.name}</strong>
+                        <span>{group.description || "未填写用户组描述"}</span>
+                      </span>
+                      <span className="tag-chip">{group.memberCount} 人</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mini-caption">当前还没有可选用户组。</p>
+            )}
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
   function describeAccessState(record: {
     accessMode: AdminAccessMode;
     effectiveAccessMode: Exclude<AdminAccessMode, "inherit">;
@@ -1072,6 +1373,8 @@ export function AdminWorkspace({
         return "待加入";
       case "disabled":
         return "已禁用";
+      case "removed":
+        return "已移除";
       default:
         return status;
     }
@@ -1189,6 +1492,8 @@ export function AdminWorkspace({
         ...folderDraft,
       });
 
+      await syncEditorAccessGrants("folder", folderEditorRecord.id, folderDraft.accessMode);
+
       if (nextParentId !== folderEditorRecord.parentId) {
         await submitJson("/api/admin/folders", "PATCH", {
           action: "move",
@@ -1240,6 +1545,8 @@ export function AdminWorkspace({
         renderMode: documentDraft.renderMode,
         featured: documentDraft.featured,
       });
+
+      await syncEditorAccessGrants("document", documentEditorRecord.id, documentDraft.accessMode);
 
       if (nextFolderId !== documentEditorRecord.folderId) {
         await submitJson("/api/admin/documents", "PATCH", {
@@ -1309,7 +1616,6 @@ export function AdminWorkspace({
 
       clearImportSelection();
       setImportAccessMode("inherit");
-      setImportRenderMode("site");
       setOpenCreatePanel(null);
       await loadWorkspace({ folderId: targetFolderId ?? "", documentId: payload.id });
       setStatusMessage(`已导入文档“${payload.title}”。`);
@@ -1388,11 +1694,14 @@ export function AdminWorkspace({
     runMutation(async () => {
       const payload = (await submitJson("/api/admin/invites", "POST", {
         siteRole: inviteRole,
-        expiresInDays: Number(inviteExpiryDays) || 7,
-        maxUses: Number(inviteMaxUses) || 1,
+        expiresInDays: parseInviteExpiryDays(
+          getInviteExpiryInputValue(inviteExpiryPreset, inviteExpiryDays),
+        ),
+        maxUses: parseInviteMaxUses(inviteMaxUses),
       })) as CreatedInviteRecord;
 
-      setInviteExpiryDays("7");
+      setInviteExpiryPreset(DEFAULT_INVITE_EXPIRY_PRESET);
+      setInviteExpiryDays(DEFAULT_INVITE_EXPIRY_DAYS);
       setInviteMaxUses("1");
       const secret = rememberInviteSecret(payload);
       const copied = await copyTextToClipboard(secret.inviteLink);
@@ -1471,14 +1780,16 @@ export function AdminWorkspace({
 
     if (
       typeof window !== "undefined" &&
-      !window.confirm(`确认移出“${member.displayName ?? member.email ?? "该成员"}”？`)
+      !window.confirm(
+        `确定彻底删除“${member.displayName ?? member.email ?? "该成员"}”吗？删除后账号资料会被清空，邮箱可重新注册。`,
+      )
     ) {
       return;
     }
 
     runMutation(async () => {
       await submitJson("/api/admin/profiles", "DELETE", { id: memberId });
-      setStatusMessage(`已移出“${member.displayName ?? member.email ?? "成员"}”。`);
+      setStatusMessage(`已彻底删除“${member.displayName ?? member.email ?? "成员"}”。`);
       await loadWorkspace({ folderId: currentFolder?.id, documentId: previewDocument?.id });
     });
   }
@@ -1650,30 +1961,46 @@ export function AdminWorkspace({
   }
 
   function renderTree(parentId: string | null, depth = 0): React.ReactNode {
-    const branchFolders = folders
-      .filter((folder) => folder.parentId === parentId)
-      .sort((left, right) => left.order - right.order);
+    const branchFolders = folderChildrenMap.get(parentId) ?? [];
 
     return branchFolders.map((folder) => (
-      <div key={folder.id}>
-        <button
-          type="button"
-          className={`tree-node ${currentFolder?.id === folder.id ? "is-active" : ""} ${
-            dropTargetFolderId === folder.id ? "is-drop-target" : ""
-          } ${dragResource?.type === "folder" && dragResource.id === folder.id ? "is-dragging" : ""}`}
-          style={{ paddingLeft: `${depth * 18 + 18}px` }}
-          aria-pressed={currentFolder?.id === folder.id}
-          draggable={workspace?.canMutate ?? false}
-          onClick={() => handleSelectFolder(folder.id)}
-          onDragStart={(event) => handleResourceDragStart(event, { type: "folder", id: folder.id })}
-          onDragEnd={handleResourceDragEnd}
-          onDragOver={(event) => handleFolderDragOver(event, folder.id)}
-          onDragLeave={(event) => handleFolderDragLeave(event, folder.id)}
-          onDrop={(event) => handleFolderDrop(event, folder.id)}
-        >
-          {folder.name}
-        </button>
-        {renderTree(folder.id, depth + 1)}
+      <div key={folder.id} className="tree-branch">
+        <div className="tree-row">
+          <button
+            type="button"
+            className={`tree-node ${currentFolder?.id === folder.id ? "is-active" : ""} ${
+              dropTargetFolderId === folder.id ? "is-drop-target" : ""
+            } ${dragResource?.type === "folder" && dragResource.id === folder.id ? "is-dragging" : ""}`}
+            style={{ paddingLeft: `${depth * 18 + 18}px` }}
+            aria-pressed={currentFolder?.id === folder.id}
+            draggable={workspace?.canMutate ?? false}
+            onClick={() => handleSelectFolder(folder.id)}
+            onDragStart={(event) => handleResourceDragStart(event, { type: "folder", id: folder.id })}
+            onDragEnd={handleResourceDragEnd}
+            onDragOver={(event) => handleFolderDragOver(event, folder.id)}
+            onDragLeave={(event) => handleFolderDragLeave(event, folder.id)}
+            onDrop={(event) => handleFolderDrop(event, folder.id)}
+          >
+            <span className="tree-node-label">{folder.name}</span>
+          </button>
+          {(folderChildrenMap.get(folder.id)?.length ?? 0) > 0 ? (
+            <button
+              type="button"
+              className="tree-node-toggle"
+              aria-label={`${collapsedFolderIds.has(folder.id) ? "展开" : "折叠"}“${folder.name}”`}
+              aria-expanded={!collapsedFolderIds.has(folder.id)}
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleTreeBranch(folder.id);
+              }}
+            >
+              <IconTreeToggle collapsed={collapsedFolderIds.has(folder.id)} />
+            </button>
+          ) : (
+            <span className="tree-node-toggle-spacer" aria-hidden="true" />
+          )}
+        </div>
+        {!collapsedFolderIds.has(folder.id) ? renderTree(folder.id, depth + 1) : null}
       </div>
     ));
   }
@@ -1900,27 +2227,6 @@ export function AdminWorkspace({
                 </select>
               </label>
 
-              <label className="import-option-card import-toggle-card">
-                <span className="import-field-label">显示方式</span>
-                <span className="import-toggle-copy">
-                  <strong>{importRenderMode === "source" ? "保留原格式" : "站内阅读版"}</strong>
-                  <small>
-                    {importRenderMode === "source"
-                      ? "直接按源文件样式展示，适合有完整设计的文档。"
-                      : "自动整理成站内统一阅读样式，适合知识库沉淀。"}
-                  </small>
-                </span>
-                <span className="admin-checkbox import-format-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={importRenderMode === "source"}
-                    onChange={(event) =>
-                      setImportRenderMode(event.target.checked ? "source" : "site")
-                    }
-                  />
-                  保留源文档格式
-                </span>
-              </label>
             </section>
           </div>
           {statusMessage ? (
@@ -2091,21 +2397,41 @@ export function AdminWorkspace({
         <div className="explorer-body">
           <aside className="tree-panel explorer-tree-pane">
             <div className="tree-list">
-              <button
-                type="button"
-                className={`tree-node ${!selectedFolderId ? "is-active" : ""} ${
-                  dropTargetFolderId === "__root__" ? "is-drop-target" : ""
-                }`}
-                style={{ paddingLeft: "18px" }}
-                aria-pressed={!selectedFolderId}
-                onClick={() => handleSelectFolder("")}
-                onDragOver={handleRootDragOver}
-                onDragLeave={handleRootDragLeave}
-                onDrop={handleRootDrop}
-              >
-                全部内容
-              </button>
-              {renderTree(null)}
+              <div className="tree-branch">
+                <div className="tree-row">
+                  <button
+                    type="button"
+                    className={`tree-node ${!selectedFolderId ? "is-active" : ""} ${
+                      dropTargetFolderId === "__root__" ? "is-drop-target" : ""
+                    }`}
+                    style={{ paddingLeft: "18px" }}
+                    aria-pressed={!selectedFolderId}
+                    onClick={() => handleSelectFolder("")}
+                    onDragOver={handleRootDragOver}
+                    onDragLeave={handleRootDragLeave}
+                    onDrop={handleRootDrop}
+                  >
+                    <span className="tree-node-label">全部内容</span>
+                  </button>
+                  {(folderChildrenMap.get(null)?.length ?? 0) > 0 ? (
+                    <button
+                      type="button"
+                      className="tree-node-toggle"
+                      aria-label={`${collapsedFolderIds.has(ROOT_TREE_NODE_ID) ? "展开" : "折叠"}“全部内容”`}
+                      aria-expanded={!collapsedFolderIds.has(ROOT_TREE_NODE_ID)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleTreeBranch(ROOT_TREE_NODE_ID);
+                      }}
+                    >
+                      <IconTreeToggle collapsed={collapsedFolderIds.has(ROOT_TREE_NODE_ID)} />
+                    </button>
+                  ) : (
+                    <span className="tree-node-toggle-spacer" aria-hidden="true" />
+                  )}
+                </div>
+                {!collapsedFolderIds.has(ROOT_TREE_NODE_ID) ? renderTree(null) : null}
+              </div>
             </div>
           </aside>
           <div
@@ -2494,6 +2820,7 @@ export function AdminWorkspace({
                   </select>
                 </label>
               </div>
+              {renderAccessGrantSection(folderDraft.accessMode)}
               <div className="toolbar-actions">
                 <button
                   type="submit"
@@ -2578,6 +2905,7 @@ export function AdminWorkspace({
                   </select>
                 </label>
               </div>
+              {renderAccessGrantSection(documentDraft.accessMode)}
               <label className="admin-checkbox">
                 <input
                   type="checkbox"
@@ -2590,19 +2918,6 @@ export function AdminWorkspace({
                   }
                 />
                 首页推荐
-              </label>
-              <label className="admin-checkbox">
-                <input
-                  type="checkbox"
-                  checked={documentDraft.renderMode === "source"}
-                  onChange={(event) =>
-                    setDocumentDraft((current) => ({
-                      ...current,
-                      renderMode: event.target.checked ? "source" : "site",
-                    }))
-                  }
-                />
-                保留源文档格式
               </label>
               <label>
                 HTML 正文
@@ -2675,7 +2990,7 @@ export function AdminWorkspace({
               <form className="admin-editor-card" onSubmit={handleCreateInviteSubmit}>
                 <div className="preview-head">
                   <h2>创建邀请</h2>
-                  <span className="mini-caption">有效期 1-30 天</span>
+                  <span className="mini-caption">支持常用时长、永久和自定义天数</span>
                 </div>
                 <p className="mini-caption">
                   无需先填邮箱。生成后会优先复制注册链接，同时返回邀请码，拿到任一方式都能完成注册。
@@ -2696,16 +3011,39 @@ export function AdminWorkspace({
                     </select>
                   </label>
                   <label>
-                    有效天数
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={inviteExpiryDays}
-                      onChange={(event) => setInviteExpiryDays(event.target.value)}
+                    有效期
+                    <select
+                      value={inviteExpiryPreset}
+                      onChange={(event) => {
+                        const nextPreset = event.target.value as InviteExpiryPreset;
+
+                        setInviteExpiryPreset(nextPreset);
+                        if (nextPreset !== "custom") {
+                          setInviteExpiryDays(nextPreset);
+                        }
+                      }}
                       disabled={!canManageMembers}
-                    />
+                    >
+                      {inviteExpiryPresetOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
+                  {inviteExpiryPreset === "custom" ? (
+                    <label>
+                      自定义天数
+                      <input
+                        type="number"
+                        min={1}
+                        value={inviteExpiryDays}
+                        onChange={(event) => setInviteExpiryDays(event.target.value)}
+                        placeholder="输入天数"
+                        disabled={!canManageMembers}
+                      />
+                    </label>
+                  ) : null}
                   <label>
                     使用数量
                     <input
@@ -2782,7 +3120,7 @@ export function AdminWorkspace({
                         <p>创建于 {formatDate(invite.createdAt.slice(0, 10))}</p>
                       </div>
                       <span>{getSiteRoleLabel(invite.siteRole)}</span>
-                      <span>{new Date(invite.expiresAt).toLocaleDateString("zh-CN")}</span>
+                      <span>{formatInviteExpiry(invite.expiresAt)}</span>
                       <span>{invite.useCount}/{invite.maxUses}</span>
                       <span>{getInviteStatusLabel(invite)}</span>
                       <div
@@ -2949,9 +3287,9 @@ export function AdminWorkspace({
                       <button
                         type="button"
                         className="resource-edit-button row-edit-button"
-                        aria-label={`移出成员：${member.displayName}`}
-                        data-tooltip="移出成员"
-                        title="移出成员"
+                        aria-label={`彻底删除成员：${member.displayName}`}
+                        data-tooltip="彻底删除"
+                        title="彻底删除"
                         onClick={() => handleMemberRemove(member.id)}
                         disabled={
                           !canManageMembers ||

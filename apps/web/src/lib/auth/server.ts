@@ -5,6 +5,11 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
+import {
+  AUTH_REFRESH_COOKIE,
+  AUTH_REFRESH_INTERVAL_MS,
+  AUTH_REFRESH_TIMEOUT_MS,
+} from "@/lib/auth/constants";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -30,6 +35,7 @@ export type AuthViewer = {
   email: string | null;
   profileId: string | null;
   displayName: string | null;
+  avatarUrl: string | null;
   siteRole: SiteRole | null;
 };
 
@@ -42,6 +48,7 @@ function emptyAuthViewer(): AuthViewer {
     email: null,
     profileId: null,
     displayName: null,
+    avatarUrl: null,
     siteRole: null,
   };
 }
@@ -76,6 +83,17 @@ async function hasSupabaseAuthCookie() {
     .some((cookie) => cookie.name.startsWith("sb-") && cookie.name.includes("-auth-token"));
 }
 
+async function hasRecentAuthRefresh() {
+  const cookieStore = await cookies();
+  const refreshedAt = Number.parseInt(cookieStore.get(AUTH_REFRESH_COOKIE)?.value ?? "", 10);
+
+  if (!Number.isFinite(refreshedAt)) {
+    return false;
+  }
+
+  return Date.now() - refreshedAt < AUTH_REFRESH_INTERVAL_MS;
+}
+
 export function normalizeRedirectPath(input?: string | null) {
   if (!input || !input.startsWith("/") || input.startsWith("//")) {
     return "/";
@@ -100,15 +118,33 @@ export function buildLoginHref(redirectTo?: string | null, error?: string | null
   return query ? `/login?${query}` : "/login";
 }
 
-export function buildRegisterHref(token?: string | null, error?: string | null) {
+export function buildRegisterHref(input: {
+  token?: string | null;
+  email?: string | null;
+  displayName?: string | null;
+  error?: string | null;
+  notice?: string | null;
+}) {
   const params = new URLSearchParams();
 
-  if (token?.trim()) {
-    params.set("token", token.trim());
+  if (input.token?.trim()) {
+    params.set("token", input.token.trim());
   }
 
-  if (error) {
-    params.set("error", error);
+  if (input.email?.trim()) {
+    params.set("email", input.email.trim());
+  }
+
+  if (input.displayName?.trim()) {
+    params.set("displayName", input.displayName.trim());
+  }
+
+  if (input.error) {
+    params.set("error", input.error);
+  }
+
+  if (input.notice) {
+    params.set("notice", input.notice);
   }
 
   const query = params.toString();
@@ -120,7 +156,7 @@ const getProfileById = cache(async function getProfileById(profileId: string) {
   const { data, error } = await adminClient
     .schema("app")
     .from("profiles")
-    .select("id, email, display_name, site_role, status, created_at, updated_at")
+    .select("id, email, display_name, avatar_url, site_role, status, created_at, updated_at")
     .eq("id", profileId)
     .maybeSingle();
 
@@ -142,6 +178,7 @@ function toAuthViewer(user: User, profile: ProfileRecord): AuthViewer {
     email: user.email ?? null,
     profileId: profile.id,
     displayName: profile.display_name,
+    avatarUrl: profile.avatar_url,
     siteRole: profile.site_role,
   };
 }
@@ -189,20 +226,29 @@ const getVerifiedAuthViewer = cache(async function getVerifiedAuthViewer(): Prom
       return emptyAuthViewer();
     }
 
+    if (await hasRecentAuthRefresh()) {
+      return getAuthViewer();
+    }
+
     const client = await createSupabaseServerClient();
     const {
       data: { user },
       error,
-    } = await withTimeout(client.auth.getUser(), "auth.getUser");
+    } = await withTimeout(client.auth.getUser(), "auth.getUser", AUTH_REFRESH_TIMEOUT_MS);
 
     if (error || !user) {
       return emptyAuthViewer();
     }
 
+    const existingProfile = await withTimeout(getProfileById(user.id), "getProfileById");
+    if (existingProfile) {
+      return toAuthViewer(user, existingProfile);
+    }
+
     const profile = await withTimeout(ensureProfileForUser(user), "ensureProfileForUser");
     return toAuthViewer(user, profile);
   } catch {
-    return emptyAuthViewer();
+    return getAuthViewer();
   }
 });
 
@@ -211,6 +257,16 @@ export async function requireAuthenticatedPage(redirectTo: string) {
 
   if (!viewer.isAuthenticated) {
     redirect(buildLoginHref(redirectTo));
+  }
+
+  return viewer;
+}
+
+export async function assertAuthenticatedAccess() {
+  const viewer = await getVerifiedAuthViewer();
+
+  if (!viewer.isAuthenticated) {
+    throw new AuthAccessError("Authentication required.", 401);
   }
 
   return viewer;
@@ -263,7 +319,7 @@ export async function ensureProfileForUser(
   const { data: existingProfile, error: existingProfileError } = await adminClient
     .schema("app")
     .from("profiles")
-    .select("id, email, display_name, site_role, status, created_at, updated_at")
+    .select("id, email, display_name, avatar_url, site_role, status, created_at, updated_at")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -299,7 +355,7 @@ export async function ensureProfileForUser(
         .from("profiles")
         .update(updatePayload)
         .eq("id", user.id)
-        .select("id, email, display_name, site_role, status, created_at, updated_at")
+        .select("id, email, display_name, avatar_url, site_role, status, created_at, updated_at")
         .single();
 
       if (error) {
@@ -334,7 +390,7 @@ export async function ensureProfileForUser(
     .schema("app")
     .from("profiles")
     .insert(insertPayload)
-    .select("id, email, display_name, site_role, status, created_at, updated_at")
+    .select("id, email, display_name, avatar_url, site_role, status, created_at, updated_at")
     .single();
 
   if (error) {

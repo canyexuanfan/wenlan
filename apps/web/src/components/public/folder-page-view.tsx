@@ -1,6 +1,9 @@
 import Link from "next/link";
 
-import type { AuthViewer } from "@/lib/auth/server";
+import { FavoriteToggleButton } from "@/components/account/favorite-toggle-button";
+import { RecentViewTracker } from "@/components/account/recent-view-tracker";
+import { buildLoginHref, type AuthViewer } from "@/lib/auth/server";
+import { isAccountFavorite } from "@/lib/account/repository";
 import { accessLabelMap } from "@/lib/content/constants";
 import type { AccentTone, FolderPageData, ViewMode } from "@/lib/content/types";
 import { formatDate, toHref } from "@/lib/content/utils";
@@ -20,7 +23,7 @@ const accentLabelMap: Record<AccentTone, string> = {
   rose: "玫瑰调",
 };
 
-export function FolderPageView({
+export async function FolderPageView({
   data,
   viewMode,
   viewer,
@@ -33,9 +36,19 @@ export function FolderPageView({
   const totalItems = childFolders.length + childDocuments.length;
   const hasDocuments = childDocuments.length > 0;
   const hasChildFolders = childFolders.length > 0;
+  const isFavorited =
+    viewer?.profileId ? await isAccountFavorite(viewer.profileId, "folder", folder.id) : false;
+  const folderHref = toHref(folder.routePath);
+  const favoriteLoginHref = buildLoginHref(folderHref);
 
   return (
     <SiteFrame siteSettings={siteSettings} navigationFolders={navigationFolders} viewer={viewer}>
+      <RecentViewTracker
+        enabled={Boolean(viewer?.isAuthenticated && viewer.profileId)}
+        targetType="folder"
+        targetId={folder.id}
+      />
+
       <section className="folder-stage paper-panel" data-accent={folder.accent}>
         <Breadcrumbs items={breadcrumbs} />
 
@@ -91,6 +104,13 @@ export function FolderPageView({
               >
                 知识库问答
               </Link>
+              <FavoriteToggleButton
+                enabled={Boolean(viewer?.isAuthenticated && viewer.profileId)}
+                initialFavorited={isFavorited}
+                loginHref={favoriteLoginHref}
+                targetType="folder"
+                targetId={folder.id}
+              />
             </div>
           </aside>
         </div>
@@ -112,6 +132,7 @@ export function FolderPageView({
                 key={childFolder.id}
                 href={toHref(childFolder.routePath)}
                 prefetch
+                scroll={false}
                 className="folder-rail-card"
               >
                 <span className="folder-rail-accent" data-accent={childFolder.accent} aria-hidden="true" />

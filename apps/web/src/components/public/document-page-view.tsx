@@ -1,13 +1,15 @@
 import Link from "next/link";
 
-import type { AuthViewer } from "@/lib/auth/server";
+import { FavoriteToggleButton } from "@/components/account/favorite-toggle-button";
+import { RecentViewTracker } from "@/components/account/recent-view-tracker";
+import { buildLoginHref, type AuthViewer } from "@/lib/auth/server";
+import { isAccountFavorite } from "@/lib/account/repository";
 import type { DocumentPageData } from "@/lib/content/types";
 import { formatDate, toHref } from "@/lib/content/utils";
 
 import { AccessBadge, Breadcrumbs, SiteFrame, TagList } from "./site-frame";
-import { SourceDocumentFrame } from "./source-document-frame";
 
-export function DocumentPageView({
+export async function DocumentPageView({
   data,
   viewer,
 }: Readonly<{
@@ -15,92 +17,22 @@ export function DocumentPageView({
   viewer?: AuthViewer;
 }>) {
   const { siteSettings, navigationFolders, folder, document, breadcrumbs, relatedDocuments } = data;
-  const preserveSourceFormatting = document.renderMode === "source";
   const documentBodyHtml = document.bodyHtml;
   const documentOutline = document.outline;
   const readingTime = document.readingTime;
-
-  if (preserveSourceFormatting) {
-    return (
-      <SiteFrame siteSettings={siteSettings} navigationFolders={navigationFolders} viewer={viewer}>
-        <section className="document-stage paper-panel source-document-stage">
-          <Breadcrumbs items={breadcrumbs} />
-
-          <div className="document-stage-grid">
-            <div className="document-stage-copy">
-              <div className="document-stage-kicker">
-                <p className="section-eyebrow">文档</p>
-                <AccessBadge mode={document.accessMode} />
-                <span className="document-stage-folder">所属栏目：{folder.name}</span>
-                <span className="document-format-badge">保留原格式</span>
-              </div>
-
-              <h1 className="page-title">{document.title}</h1>
-              <p className="page-description">{document.summary}</p>
-
-              <div className="document-stage-stats" aria-label="文档概览">
-                <div className="document-stage-stat">
-                  <span className="document-stage-stat-label">阅读时长</span>
-                  <strong className="document-stage-stat-value">{readingTime}</strong>
-                </div>
-                <div className="document-stage-stat">
-                  <span className="document-stage-stat-label">更新时间</span>
-                  <strong className="document-stage-stat-value">{formatDate(document.updatedAt)}</strong>
-                </div>
-                <div className="document-stage-stat">
-                  <span className="document-stage-stat-label">作者</span>
-                  <strong className="document-stage-stat-value">{document.authorName}</strong>
-                </div>
-                <div className="document-stage-stat">
-                  <span className="document-stage-stat-label">显示方式</span>
-                  <strong className="document-stage-stat-value">原始 HTML</strong>
-                </div>
-              </div>
-            </div>
-
-            <aside className="document-stage-aside">
-              <div className="document-stage-note">
-                <p className="mini-caption">阅读提示</p>
-                <p>
-                  这篇文档启用了保留原格式，下面会直接展示上传时的原始 HTML。站内主题只作用于外层
-                  导航和信息区，不会清洗或改写文档本体样式。
-                </p>
-              </div>
-
-              <div className="document-actions">
-                <a
-                  href={siteSettings.contactUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hero-button hero-button-strong"
-                >
-                  {siteSettings.contactLabel}
-                </a>
-                <Link href={toHref(folder.routePath)} className="hero-button">
-                  返回栏目
-                </Link>
-                <Link
-                  href={`/kb?scopeType=document&routePath=${encodeURIComponent(document.routePath)}`}
-                  className="hero-button hero-button-strong"
-                >
-                  知识库问答
-                </Link>
-              </div>
-            </aside>
-          </div>
-        </section>
-
-        <section className="source-document-page" aria-label={document.title}>
-          <div className="source-document-shell paper-panel">
-            <SourceDocumentFrame title={document.title} html={document.bodyHtml} />
-          </div>
-        </section>
-      </SiteFrame>
-    );
-  }
+  const isFavorited =
+    viewer?.profileId ? await isAccountFavorite(viewer.profileId, "document", document.id) : false;
+  const documentHref = toHref(document.routePath);
+  const favoriteLoginHref = buildLoginHref(documentHref);
 
   return (
     <SiteFrame siteSettings={siteSettings} navigationFolders={navigationFolders} viewer={viewer}>
+      <RecentViewTracker
+        enabled={Boolean(viewer?.isAuthenticated && viewer.profileId)}
+        targetType="document"
+        targetId={document.id}
+      />
+
       <section className="document-stage paper-panel">
         <Breadcrumbs items={breadcrumbs} />
 
@@ -140,10 +72,7 @@ export function DocumentPageView({
           <aside className="document-stage-aside">
             <div className="document-stage-note">
               <p className="mini-caption">阅读提示</p>
-              <p>
-                当前是站内统一阅读版，只作用于站内渲染文档。勾选了保留原格式的文档会继续走原始
-                HTML iframe 展示，不会被这里的样式改写。
-              </p>
+              <p>当前文档统一使用站内阅读版展示，便于目录、搜索、问答和样式保持一致。</p>
             </div>
 
             <div className="document-actions">
@@ -158,6 +87,13 @@ export function DocumentPageView({
               <Link href={toHref(folder.routePath)} className="hero-button">
                 返回栏目
               </Link>
+              <FavoriteToggleButton
+                enabled={Boolean(viewer?.isAuthenticated && viewer.profileId)}
+                initialFavorited={isFavorited}
+                loginHref={favoriteLoginHref}
+                targetType="document"
+                targetId={document.id}
+              />
               <Link
                 href={`/kb?scopeType=document&routePath=${encodeURIComponent(document.routePath)}`}
                 className="hero-button hero-button-strong"

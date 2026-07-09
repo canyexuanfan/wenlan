@@ -4,6 +4,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AuthFrame } from "@/components/public/auth-frame";
+import { LoginEmailCodePanel } from "@/components/public/login-email-code-panel";
+import { buildPasswordRecoveryHref } from "@/lib/account/redirects";
 import { getAuthViewer, normalizeRedirectPath } from "@/lib/auth/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
@@ -46,8 +48,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const notice = resolvedSearchParams.notice ? decodeURIComponent(resolvedSearchParams.notice) : "";
   const isPasswordMethod = resolvedSearchParams.method === "password";
   const isConfigured = isSupabaseConfigured();
-  const errorId = error ? "login-error" : undefined;
-  const noticeId = notice ? "login-notice" : undefined;
   const helpId = "login-help";
   const unavailableId = "login-unavailable";
 
@@ -73,7 +73,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               欢迎回来
             </h1>
             <p id={helpId} className="page-description login-copy">
-              {isConfigured ? "输入邮箱，使用验证码进入。" : "当前登录服务暂不可用，请稍后再试。"}
+              {isConfigured
+                ? "输入邮箱验证码，或者使用密码直接登录。"
+                : "当前登录服务暂不可用，请稍后再试。"}
             </p>
           </div>
 
@@ -96,14 +98,14 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 </Link>
               </nav>
 
-              {notice ? (
-                <p id={noticeId} className="form-success" role="status" aria-live="polite">
+              {isPasswordMethod && notice ? (
+                <p className="form-success" role="status" aria-live="polite">
                   {notice}
                 </p>
               ) : null}
 
-              {error ? (
-                <p id={errorId} className="form-error" role="alert" aria-live="assertive">
+              {isPasswordMethod && error ? (
+                <p className="form-error" role="alert" aria-live="assertive">
                   {error}
                 </p>
               ) : null}
@@ -114,7 +116,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                   method="post"
                   className="login-form"
                   aria-labelledby="login-title"
-                  aria-describedby={[helpId, noticeId, errorId].filter(Boolean).join(" ")}
+                  aria-describedby={helpId}
                 >
                   <input type="hidden" name="redirectTo" value={redirectTo} />
                   <label htmlFor="login-password-identifier">登录名</label>
@@ -122,10 +124,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                     id="login-password-identifier"
                     type="text"
                     name="identifier"
-                    placeholder="输入登录名"
+                    placeholder="输入邮箱或管理员用户名"
                     autoComplete="username"
+                    defaultValue={email}
                     aria-invalid={Boolean(error)}
-                    aria-describedby={error ? errorId : helpId}
+                    aria-describedby={helpId}
                     required
                   />
 
@@ -137,73 +140,25 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                     placeholder="请输入密码"
                     autoComplete="current-password"
                     aria-invalid={Boolean(error)}
-                    aria-describedby={error ? errorId : helpId}
+                    aria-describedby={helpId}
                     required
                   />
 
                   <button type="submit" className="hero-button hero-button-strong login-submit">
                     登录
                   </button>
+
+                  <Link href={buildPasswordRecoveryHref({ email })} className="login-helper-link">
+                    忘记密码
+                  </Link>
                 </form>
               ) : (
-                <>
-                  <form
-                    action="/auth/email-code/request"
-                    method="post"
-                    className="login-form login-code-form"
-                    aria-labelledby="login-title"
-                    aria-describedby={[helpId, noticeId, errorId].filter(Boolean).join(" ")}
-                  >
-                    <input type="hidden" name="redirectTo" value={redirectTo} />
-                    <label htmlFor="login-email-code-address">邮箱</label>
-                    <input
-                      id="login-email-code-address"
-                      type="email"
-                      name="email"
-                      placeholder="输入邮箱地址"
-                      defaultValue={email}
-                      autoComplete="email"
-                      inputMode="email"
-                      aria-invalid={Boolean(error)}
-                      aria-describedby={error ? errorId : helpId}
-                      required
-                    />
-
-                    <button type="submit" className="hero-button login-submit">
-                      发送验证码
-                    </button>
-                  </form>
-
-                  {email ? (
-                    <form
-                      action="/auth/email-code/verify"
-                      method="post"
-                      className="login-form login-code-form"
-                      aria-labelledby="login-title"
-                      aria-describedby={[helpId, noticeId, errorId].filter(Boolean).join(" ")}
-                    >
-                      <input type="hidden" name="redirectTo" value={redirectTo} />
-                      <input type="hidden" name="email" value={email} />
-                      <label htmlFor="login-email-code-token">验证码</label>
-                      <input
-                        id="login-email-code-token"
-                        type="text"
-                        name="token"
-                        placeholder="输入邮箱中的验证码"
-                        autoComplete="one-time-code"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        aria-invalid={Boolean(error)}
-                        aria-describedby={error ? errorId : helpId}
-                        required
-                      />
-
-                      <button type="submit" className="hero-button hero-button-strong login-submit">
-                        验证并登录
-                      </button>
-                    </form>
-                  ) : null}
-                </>
+                <LoginEmailCodePanel
+                  initialEmail={email}
+                  initialError={error}
+                  initialNotice={notice}
+                  redirectTo={redirectTo}
+                />
               )}
 
               <div className="login-register-row">
@@ -212,12 +167,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               </div>
             </>
           ) : (
-            <div
-              id={unavailableId}
-              className="empty-state"
-              role="status"
-              aria-live="polite"
-            >
+            <div id={unavailableId} className="empty-state" role="status" aria-live="polite">
               登录功能正在准备中，请稍后再试。
             </div>
           )}

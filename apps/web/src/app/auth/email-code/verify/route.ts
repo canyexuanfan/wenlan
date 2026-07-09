@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { ensureProfileForUser, normalizeRedirectPath } from "@/lib/auth/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseRouteHandlerClient } from "@/lib/supabase/server";
 
 function buildEmailCodeHref(input: {
   email?: string | null;
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const client = await createSupabaseServerClient();
+  const { client, applyCookies } = await createSupabaseRouteHandlerClient();
   const { data, error } = await client.auth.verifyOtp({
     email,
     token,
@@ -114,5 +114,5 @@ export async function POST(request: Request) {
 
   await ensureProfileForUser(data.user);
 
-  return NextResponse.redirect(buildSameHostUrl(request, redirectTo));
+  return applyCookies(NextResponse.redirect(buildSameHostUrl(request, redirectTo)));
 }
