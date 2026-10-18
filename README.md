@@ -1,8 +1,16 @@
 # 文览 Wenlan
 
+<p align="center">
+  <img src="apps/web/public/branding/wenlan-logo.png" alt="Wenlan logo" width="96">
+</p>
+
 > 把各种文档，做成可阅读、可检索、可控权限的在线展台。
 
 文览是一个文档库与轻量内容管理系统。导入 HTML 和 Markdown 文档，像文件资源管理器一样分门别类地组织，并通过管理员 / 用户角色与邀请注册控制访问。适合团队把 SOP、教程、方案、报告、手册、知识卡片等文档统一上线展示。
+
+<p align="center">
+  <img src="apps/web/public/illustrations/account-center-hero-v1.png" alt="Wenlan account center" width="640">
+</p>
 
 ## ✨ 特性
 
