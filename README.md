@@ -12,6 +12,15 @@
   <img src="apps/web/public/illustrations/account-center-hero-v1.png" alt="Wenlan account center" width="640">
 </p>
 
+## 🖼 界面预览
+
+| 首页 · 精选与推荐 | SOP 文档库 |
+|:---:|:---:|
+| ![首页](docs/screenshots/home.png) | ![SOP 文档库](docs/screenshots/sop.png) |
+| **文档阅读页**（目录导航 / 元数据 / 契合阅读提示） | |
+| ![文档阅读页](docs/screenshots/doc.png) | |
+
+
 ## ✨ 特性
 
 **文档管理**
