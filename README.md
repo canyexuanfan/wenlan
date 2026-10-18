@@ -8,14 +8,7 @@
 
 文览是一个文档库与轻量内容管理系统。导入 HTML 和 Markdown 文档，像文件资源管理器一样分门别类地组织，并通过管理员 / 用户角色与邀请注册控制访问。适合团队把 SOP、教程、方案、报告、手册、知识卡片等文档统一上线展示。
 
-
-## 🖼 界面预览
-
-| 首页 · 精选与推荐 | SOP 文档库 |
-|:---:|:---:|
-| ![首页](docs/screenshots/home.png) | ![SOP 文档库](docs/screenshots/sop.png) |
-| **文档阅读页**（目录导航 / 元数据 / 契合阅读提示） | |
-| ![文档阅读页](docs/screenshots/doc.png) | |
+![文览首页：精选与推荐](docs/screenshots/home.png)
 
 
 ## ✨ 特性
@@ -52,6 +45,12 @@ npm run dev:local
 ```
 
 `npm run dev:local` 需要本地 Supabase 已就绪（仓库内含 `supabase:local` 等脚本）。真实密钥只放在本地环境文件或部署平台的密钥存储里，**不要提交**。
+
+启动后即是完整的文档库与阅读体验：
+
+![SOP 文档库](docs/screenshots/sop.png)
+
+![文档阅读页：目录导航与元数据](docs/screenshots/doc.png)
 
 ## ⚙️ 配置
 
